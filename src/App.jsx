@@ -2373,12 +2373,75 @@ function ClienteApp() {
   const [bookingSuccess, setBookingSuccess] = useState('')
   const [bookingId, setBookingId] = useState(null)
 
+  // Instalação opcional do PWA (sem modificar o banco).
+  const [installPrompt, setInstallPrompt] = useState(null)
+  const [installOpen, setInstallOpen] = useState(false)
+  const [installKnown, setInstallKnown] = useState(false)
+  const [standalone, setStandalone] = useState(false)
+  const [iosDevice, setIosDevice] = useState(false)
+
+  useEffect(() => {
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+    setStandalone(isStandalone)
+    setIosDevice(isIOS)
+    setInstallKnown(localStorage.getItem('mrsaloum-pwa-installed') === 'yes')
+
+    function onBeforeInstallPrompt(event) {
+      event.preventDefault()
+      setInstallPrompt(event)
+    }
+    function onAppInstalled() {
+      localStorage.setItem('mrsaloum-pwa-installed', 'yes')
+      setInstallKnown(true)
+      setInstallOpen(false)
+      setInstallPrompt(null)
+    }
+    window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt)
+    window.addEventListener('appinstalled', onAppInstalled)
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt)
+      window.removeEventListener('appinstalled', onAppInstalled)
+    }
+  }, [])
+
+  const podeConvidarInstalacao = !standalone && !installKnown
+  function convidarInstalacao() {
+    if (podeConvidarInstalacao) setInstallOpen(true)
+  }
+
+  async function instalarAplicativo() {
+    if (installPrompt) {
+      const prompt = installPrompt
+      setInstallPrompt(null)
+      try {
+        await prompt.prompt()
+        const escolha = await prompt.userChoice
+        if (escolha?.outcome === 'accepted') setInstallOpen(false)
+      } catch (error) {
+        console.warn('Não foi possível abrir a instalação:', error)
+      }
+    } else if (!iosDevice) {
+      // Sem evento de instalação disponível: orientar instalação manual.
+      setInstallOpen(true)
+    }
+  }
+
   function limparMensagensAgendamento() {
     setBookingError('')
     setBookingSuccess('')
     setBookingId(null)
     setBookingDetails(null)
   }
+
+  useEffect(() => {
+    if (!installOpen) return
+    const onKey = (event) => { if (event.key === 'Escape') setInstallOpen(false) }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [installOpen])
 
   useEffect(() => {
     const modalAberto = profileOpen || bookingsOpen
@@ -2619,6 +2682,7 @@ function ClienteApp() {
     } else {
       setUser(data.user)
       carregarDadosCliente(data.user)
+      convidarInstalacao()
     }
 
     setAuthSubmitting(false)
@@ -2702,6 +2766,7 @@ function ClienteApp() {
       : availableTimes
 
   function selecionarServico(service) {
+    if (!selectedBarber) return
     limparMensagensAgendamento()
 
     setSelectedServices((servicosAtuais) => {
@@ -2719,6 +2784,8 @@ function ClienteApp() {
     })
 
     setSelectedTime('')
+    setSelectedDate('')
+    setWeekOffset(0)
   }
 
   const totalServicos = selectedServices.reduce(
@@ -2814,7 +2881,7 @@ function ClienteApp() {
     let ativo = true
 
     async function buscarHorariosDisponiveis() {
-      if (!selectedDate || !selectedBarber) {
+      if (!selectedDate || !selectedBarber || selectedServices.length === 0) {
         setAvailableTimes([])
         setLoadingTimes(false)
         return
@@ -2896,6 +2963,7 @@ function ClienteApp() {
       })
 
       setBookingSuccess('Seu agendamento foi realizado com sucesso!')
+      convidarInstalacao()
 
       await carregarAgendamentos()
       setAvailabilityRefresh((valor) => valor + 1)
@@ -3012,6 +3080,11 @@ function ClienteApp() {
         </nav>
 
         <div className="navbar-actions">
+          {podeConvidarInstalacao && (
+            <button type="button" className="profile-button" onClick={convidarInstalacao}>
+              Instalar aplicativo
+            </button>
+          )}
           <button
             type="button"
             className="bookings-nav-button"
@@ -3035,6 +3108,28 @@ function ClienteApp() {
 
         </div>
       </header>
+
+      {/* Convite de instalação: opcional e não intrusivo. */}
+      {installOpen && podeConvidarInstalacao && (
+        <div role="presentation" onClick={() => setInstallOpen(false)} style={{position:'fixed',inset:0,zIndex:20000,background:'rgba(0,0,0,.78)',display:'flex',alignItems:'center',justifyContent:'center',padding:18}}>
+          <section role="dialog" aria-modal="true" aria-labelledby="pwa-title" onClick={(e) => e.stopPropagation()} style={{position:'relative',width:'100%',maxWidth:410,background:'#191817',border:'1px solid #6b5638',borderRadius:18,padding:26,color:'#f5f1e9',boxShadow:'0 20px 80px #000a'}}>
+            <button type="button" aria-label="Fechar convite" onClick={() => setInstallOpen(false)} style={{position:'absolute',right:14,top:12,background:'transparent',border:0,color:'#eee',fontSize:27,cursor:'pointer'}}>×</button>
+            <img src="/pwa-192.png" alt="Mr.Saloum" width="78" height="78" style={{borderRadius:18,objectFit:'cover',marginBottom:12}} />
+            <h2 id="pwa-title" style={{margin:'0 0 10px',fontSize:23}}>Mr.Saloum no seu celular</h2>
+            <p style={{lineHeight:1.6,color:'#d5d0c8'}}>Instale gratuitamente para agendar seu próximo corte com apenas um toque. Você também pode continuar usando o site normalmente.</p>
+            {installPrompt ? (
+              <button type="button" onClick={instalarAplicativo} style={{width:'100%',padding:14,border:0,borderRadius:10,background:'#c5a46d',color:'#151515',fontWeight:800,cursor:'pointer'}}>Instalar aplicativo</button>
+            ) : (
+              <p style={{fontSize:14,lineHeight:1.6,color:'#e8d1a9'}}>
+                {iosDevice
+                  ? 'No Safari, toque em Compartilhar e depois em “Adicionar à Tela de Início”.'
+                  : 'No Chrome, abra o menu ⋮ e escolha “Instalar app” ou “Adicionar à tela inicial”, quando disponível.'}
+              </p>
+            )}
+            <button type="button" onClick={() => setInstallOpen(false)} style={{display:'block',margin:'14px auto 0',background:'transparent',border:0,color:'#d1cbc2',cursor:'pointer'}}>Agora não</button>
+          </section>
+        </div>
+      )}
 
       {/* MODAL MEU CADASTRO */}
       {profileOpen && (
@@ -3407,6 +3502,11 @@ function ClienteApp() {
               key={barber.id}
               onClick={() => {
                 limparMensagensAgendamento()
+                if (selectedBarber?.id !== barber.id) {
+                  setSelectedServices([])
+                  setSelectedDate('')
+                  setWeekOffset(0)
+                }
                 setSelectedBarber(barber)
                 setSelectedTime('')
 
@@ -3434,7 +3534,7 @@ function ClienteApp() {
       </section>
 
       {/* SERVIÇOS */}
-      <section className="services section" id="servicos">
+      <section className="services section" id="servicos" aria-disabled={!selectedBarber} style={!selectedBarber ? {opacity:0.55} : undefined}>
         <div className="section-heading">
           <span className="eyebrow">NOSSO MENU</span>
 
@@ -3443,7 +3543,7 @@ function ClienteApp() {
           </h2>
 
           <p>
-            Qualidade e cuidado em cada atendimento.
+            {selectedBarber ? 'Qualidade e cuidado em cada atendimento.' : 'Primeiro escolha um barbeiro para liberar os serviços.'}
           </p>
         </div>
 
@@ -3459,6 +3559,11 @@ function ClienteApp() {
               }`}
               key={service.id}
               onClick={() => selecionarServico(service)}
+              role="button"
+              tabIndex={selectedBarber ? 0 : -1}
+              aria-disabled={!selectedBarber}
+              onKeyDown={(e) => { if (selectedBarber && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selecionarServico(service) } }}
+              style={!selectedBarber ? {cursor:'not-allowed',pointerEvents:'none'} : undefined}
             >
               <div className="service-icon">
                 {service.icon}
@@ -3487,11 +3592,11 @@ function ClienteApp() {
         </div>
 
       {/* DATA E HORÁRIO */}
-      <section className="booking" id="agendar">
+      <section className="booking" id="agendar" aria-disabled={!selectedBarber || selectedServices.length === 0} style={!selectedBarber || selectedServices.length === 0 ? {opacity:0.55} : undefined}>
         <div className="booking-panel-heading">
           <span className="eyebrow">ÚLTIMA ETAPA</span>
           <h2>Data e <span>horário</span></h2>
-          <p>Veja os horários disponíveis para seu atendimento.</p>
+          <p>{!selectedBarber ? 'Escolha primeiro seu barbeiro.' : selectedServices.length === 0 ? 'Escolha pelo menos um serviço para liberar as datas.' : 'Veja os horários disponíveis para seu atendimento.'}</p>
         </div>
         <div className="booking-date">
           <div className="week-navigation">
@@ -3500,7 +3605,7 @@ function ClienteApp() {
               onClick={() => {
                 setWeekOffset((atual) => Math.max(0, atual - 1))
               }}
-              disabled={weekOffset === 0}
+              disabled={weekOffset === 0 || !selectedBarber || selectedServices.length === 0}
             >
               ←
             </button>
@@ -3522,7 +3627,7 @@ function ClienteApp() {
               onClick={() => {
                 setWeekOffset((atual) => Math.min(1, atual + 1))
               }}
-              disabled={weekOffset === 1}
+              disabled={weekOffset === 1 || !selectedBarber || selectedServices.length === 0}
             >
               →
             </button>
@@ -3543,7 +3648,7 @@ function ClienteApp() {
                   } ${
                     diaPassado || diaForaDoLimite ? 'disabled' : ''
                   }`}
-                  disabled={diaPassado || diaForaDoLimite}
+                  disabled={diaPassado || diaForaDoLimite || !selectedBarber || selectedServices.length === 0}
                   onClick={() => {
                     limparMensagensAgendamento()
                     setSelectedDate(dataFormatada)
