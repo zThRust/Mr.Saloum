@@ -17,7 +17,7 @@ export function editableBarberProfiles(data, { role, barber_id: ownId }) {
 
 export function barberProfilePayload(record, photoInput, phoneInput) {
   const photo = photoInput.trim()
-  if (photo) {
+  if (photo && photo !== record.photo_url) {
     try {
       const url = new URL(photo)
       if (!/^https:\/\//i.test(photo) || url.protocol !== 'https:' || url.username || url.password) {

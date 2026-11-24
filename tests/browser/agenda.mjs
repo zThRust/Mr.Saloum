@@ -38,7 +38,7 @@ async function cdp(method, params = {}) {
 }
 
 async function evaluate(expression) {
-  const response = await cdp('Runtime.evaluate', { expression, returnByValue: true })
+  const response = await cdp('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
   if (response.exceptionDetails) throw new Error(JSON.stringify(response.exceptionDetails))
   return response.result.value
 }
@@ -58,7 +58,7 @@ function installMock() {
   const barber = (id, name) => ({ id, name, active: true })
   const user = { id: '00000000-0000-4000-8000-000000000001', role: 'authenticated', is_anonymous: false }
   const barbers = [barber(user.id, 'Aline'), barber('b', 'Bruno'), barber('c', 'Caio'), barber('d', 'Deise')]
-  const contact = { ...barbers[0], photo_url: null, whatsapp: null, version: 'fixture-v1' }
+  const contact = { ...barbers[0], photo_url: 'https://example.test/foto-legada.png', whatsapp: null, version: 'fixture-v1' }
   const service = { id: 's', name: 'Corte simulado', price: 30, slot_units: 1, active: true }
   const historical = {
     id: '00000000-0000-4000-8000-000000000009',
@@ -89,6 +89,19 @@ function installMock() {
     const url = new URL(request.url)
     if (url.origin === location.origin) return fetchLocal(request)
     if (url.origin !== 'http://127.0.0.1:59887') throw new Error('Origem fora do mock')
+    if (url.pathname.startsWith('/storage/v1/object/barber-photos/')) {
+      const path = url.pathname.split('/').slice(-2).join('/')
+      const multipart = await request.formData()
+      const blob = [...multipart.values()].find((part) => part instanceof Blob)
+      const bitmap = await createImageBitmap(blob)
+      window.testCalls.push({ name: 'upload-photo', path, size: blob.size, type: blob.type,
+        width: bitmap.width, height: bitmap.height, upsert: request.headers.get('x-upsert') })
+      bitmap.close()
+      if ((!master && !path.startsWith(user.id + '/')) || window.rejectPhotoUpload) {
+        return Response.json({ message: 'Upload bloqueado' }, { status: 403 })
+      }
+      return Response.json({ Key: `barber-photos/${path}` })
+    }
     const name = url.pathname.split('/').at(-1)
     const body = request.method === 'POST' ? await request.json() : null
     const projection = url.searchParams.get('select')?.split(',').sort().join(',')
@@ -114,12 +127,16 @@ function installMock() {
       consultar_disponibilidade: ['05:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00']
         .map((horario) => ({ horario, disponivel: true })),
       mr_saloum_pode_gerenciar_catalogo_v1: master,
+      mr_saloum_pode_editar_foto_v1: master || (location.search === '?barber' && body?.p_barber_id === user.id),
       mr_saloum_listar_catalogo_v1: {
         barbers: [...barbers.map((item) => ({ ...item, version: 'fixture-v1', can_delete: item.id === 'b' })), historical],
         services: [{ ...service, version: 'fixture-service', can_delete: false }]
       },
       mr_saloum_listar_perfis_editaveis_v1: master || location.search === '?admin-contact'
         ? [contact, historical] : location.search === '?barber' ? [contact] : []
+    }
+    if (location.search === '?admin-contact' && name === 'mr_saloum_pode_editar_foto_v1') {
+      return Response.json({ code: 'PGRST202', message: 'RPC ainda não instalada' }, { status: 404 })
     }
     if (name === 'mr_saloum_atualizar_perfil_barbeiro_v1') {
       if (!window.allowProfileSave) return Response.json({ code: 'MS004', message: 'Fixture vencida' }, { status: 400 })
@@ -128,6 +145,12 @@ function installMock() {
       }
       Object.assign(contact, { photo_url: body.p_photo_url, whatsapp: body.p_whatsapp, version: 'fixture-profile-v2' })
       barbers[0].photo_url = body.p_photo_url
+      if (window.uncertainPhotoSave) return Response.json({ message: 'Resposta perdida' }, { status: 503 })
+    }
+    if (name === 'mr_saloum_criar_barbeiro_para_foto_v1') {
+      const id = '00000000-0000-4000-8000-000000000008'
+      barbers.push(barber(id, body.p_values.name))
+      return Response.json({ id, version: 'fixture-v1' })
     }
     if (name === 'mr_saloum_alterar_catalogo_v1') {
       if (window.catalogError) {
@@ -141,6 +164,7 @@ function installMock() {
         if (window.uncertainCreate) return Response.json({ message: 'Resposta perdida' }, { status: 503 })
       } else if (target && body.p_action === 'delete') barbers.splice(barbers.indexOf(target), 1)
       else if (target && body.p_action === 'deactivate') target.active = false
+      else if (target && body.p_action === 'update') Object.assign(target, body.p_values)
       else if (body.p_kind === 'service' && body.p_id === service.id && body.p_action === 'update') {
         Object.assign(service, body.p_values)
       }
@@ -176,6 +200,24 @@ const clickButton = (label) => evaluate(`[...document.querySelectorAll("button")
 const viewport = (width, mobile) => cdp('Emulation.setDeviceMetricsOverride', {
   width, height: 844, deviceScaleFactor: 1, mobile
 })
+const pickPhoto = (kind = 'valid') => evaluate(`(async () => {
+  const canvas = document.createElement('canvas')
+  canvas.width = 720
+  canvas.height = 560
+  const context = canvas.getContext('2d')
+  context.fillStyle = '#98583a'
+  context.fillRect(0, 0, canvas.width, canvas.height)
+  const kind = ${JSON.stringify(kind)}
+  const file = kind === 'valid' ? new File([await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))], 'foto.png', { type: 'image/png' })
+    : kind === 'large' ? new File([new Uint8Array(10485761)], 'grande.png', { type: 'image/png' })
+    : new File(['<svg></svg>'], 'falsa.png', { type: 'image/png' })
+  const transfer = new DataTransfer()
+  transfer.items.add(file)
+  const field = document.querySelector('.admin-photo-field input[type=file]')
+  field.files = transfer.files
+  field.dispatchEvent(new Event('change', { bubbles: true }))
+})()`)
+const photoReady = () => until('document.querySelector(".admin-photo-field img")?.getAttribute("src")?.startsWith("blob:")')
 const navLabels = '[...document.querySelectorAll(".admin-shell-nav button")].map(button => button.textContent.trim())'
 async function openSection(label, id) {
   await evaluate(`[...document.querySelectorAll('.admin-shell-nav button')].find(button => button.textContent.trim() === ${JSON.stringify(label)}).click()`)
@@ -216,6 +258,12 @@ try {
   await until('!document.querySelector(\'[role="dialog"]\')')
   assert.equal(await evaluate(countVisible), 1)
   assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true)
+  assert.notEqual(await evaluate('getComputedStyle(document.querySelector(".admin-calendar-step")).backgroundColor'), 'rgb(255, 255, 255)')
+  assert.equal(await evaluate(`{
+    const past = document.querySelector('.admin-calendar-event.is-past')
+    const action = past?.querySelector('.admin-calendar-add-past-button')
+    !action || action.getBoundingClientRect().top >= past.querySelector('.admin-calendar-event-info').getBoundingClientRect().bottom
+  }`), true)
 
   await swipe(slot, -100, 0)
   await swipe(booked, 100, 0, true)
@@ -311,10 +359,9 @@ try {
   await until('document.body.innerText.includes("Editar meu contato")')
   await evaluate('[...document.querySelectorAll("button")].find(button => button.textContent === "Editar meu contato").click()')
   const fillContact = () => evaluate(`{
-    const photo = document.querySelector('input[name="photo"]')
-    photo.value = 'https://example.test/foto.png'
-    photo.form.querySelector('input[name="phone"]').value = '(84) 99999-1234'
-    photo.form.requestSubmit()
+    const phone = document.querySelector('input[name="phone"]')
+    phone.value = '(84) 99999-1234'
+    phone.form.requestSubmit()
   }`)
   await fillContact()
   await until('document.body.innerText.includes("Este perfil mudou ou foi removido")')
@@ -322,16 +369,53 @@ try {
   assert.deepEqual(writes.map(({ body }) => body), [{
     p_barber_id: '00000000-0000-4000-8000-000000000001',
     p_expected_version: 'fixture-v1',
-    p_photo_url: 'https://example.test/foto.png',
+    p_photo_url: 'https://example.test/foto-legada.png',
     p_whatsapp: '84999991234'
   }])
-  assert.equal(await evaluate('document.querySelector("input[name=photo]") === null'), true)
+  assert.equal(await evaluate('document.querySelector("input[name=phone]") === null'), true)
   await clickButton('Recarregar contatos')
-  await until('!!document.querySelector("input[name=photo]")')
+  await until('!!document.querySelector(".admin-photo-field input[type=file]")')
+  await pickPhoto('invalid')
+  await until('document.body.innerText.includes("JPEG, PNG ou WebP válida")')
+  await pickPhoto('large')
+  await until('document.body.innerText.includes("até 10 MB")')
+  await pickPhoto()
+  await photoReady()
+  await evaluate(`{
+    const slider = document.querySelector('.admin-photo-field input[type=range]')
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(slider, '2')
+    slider.dispatchEvent(new Event('input', { bubbles: true }))
+    slider.dispatchEvent(new Event('change', { bubbles: true }))
+  }`)
+  await until('!document.body.innerText.includes("Processando foto")')
+  await clickButton('Cancelar alteração da foto')
+  assert.equal(await evaluate('document.querySelector(".admin-photo-field img").src.endsWith("foto-legada.png")'), true)
+  await pickPhoto()
+  await photoReady()
+  await evaluate('window.rejectPhotoUpload = true')
+  await fillContact()
+  await until('document.body.innerText.includes("A foto atual foi preservada")')
+  assert.equal(await evaluate('testCalls.filter(call => call.name === "mr_saloum_atualizar_perfil_barbeiro_v1").length'), 1)
+  await evaluate('window.rejectPhotoUpload = false')
   await evaluate('window.allowProfileSave = true')
   await fillContact()
   await until('document.body.innerText.includes("Contato atualizado.")')
   assert.equal(await evaluate('document.querySelector("input[name=phone]").value'), '84999991234')
+  const upload = await evaluate('testCalls.filter(call => call.name === "upload-photo").at(-1)')
+  assert.ok(upload.path.startsWith('00000000-0000-4000-8000-000000000001/'))
+  assert.equal(upload.type, 'image/webp')
+  assert.equal(upload.width, upload.height)
+  assert.ok(upload.width <= 512 && upload.size <= 150 * 1024)
+  assert.notEqual(upload.upsert, 'true')
+  await until('!!document.querySelector(".admin-photo-field input[type=file]")')
+  await clickButton('Remover foto')
+  await evaluate('window.uncertainPhotoSave = true')
+  await fillContact()
+  await until('document.body.innerText.includes("Não foi possível confirmar a alteração")')
+  assert.equal(await evaluate('testCalls.filter(call => call.name === "upload-photo").length'), 2)
+  await clickButton('Recarregar contatos')
+  await until('!!document.querySelector(".admin-photo-field input[type=file]")')
+  assert.equal(await evaluate('!!document.querySelector(".admin-photo-field img")'), false)
 
   await evaluate('localStorage.clear()')
   await login('/admin?admin-contact')
@@ -340,6 +424,13 @@ try {
   await openSection('Equipe', 'equipe')
   await until('document.querySelector(".admin-team-list")?.textContent.includes("Eva")')
   assert.equal(await evaluate('testCalls.some(call => call.name === "mr_saloum_listar_catalogo_v1")'), false)
+  await evaluate('document.querySelector(".admin-team-list button").click()')
+  await until('!!document.querySelector("input[name=phone]") && document.body.innerText.includes("Alteração de foto indisponível")')
+  assert.equal(await evaluate('!!document.querySelector(".admin-photo-field input[type=file]")'), false)
+  await evaluate('window.allowProfileSave = true')
+  await fillContact()
+  await until('document.body.innerText.includes("Contato atualizado.")')
+  assert.equal(await evaluate('testCalls.some(call => call.name === "upload-photo")'), false)
   await evaluate('localStorage.clear()')
   await login('/admin?master')
   await until(`${navLabels}.length === 5`)
@@ -403,6 +494,19 @@ try {
   assert.equal(await evaluate('testCalls.filter(call => call.body?.p_action === "create").length'), 1)
   await clickButton('Recarregar catálogo')
   await until('document.body.innerText.includes("Fabiana")')
+  await clickButton('Cadastrar barbeiro')
+  await until('!!document.querySelector(".admin-photo-field input[type=file]")')
+  await pickPhoto()
+  await photoReady()
+  await evaluate(`{
+    const form = document.querySelector('input[name=profile_id]').form
+    form.elements.name.value = 'Gabi'
+    form.elements.profile_id.value = '00000000-0000-4000-8000-000000000008'
+    form.requestSubmit()
+  }`)
+  await until('document.body.innerText.includes("Gabi") && !document.querySelector("input[name=profile_id]")')
+  assert.equal(await evaluate('testCalls.filter(call => call.name === "mr_saloum_criar_barbeiro_para_foto_v1").length'), 1)
+  assert.equal(await evaluate('testCalls.find(call => call.name === "upload-photo").path.split("/")[0]'), '00000000-0000-4000-8000-000000000008')
   await evaluate('confirm = () => true')
   await brunoAction('Excluir definitivamente')
   await until('document.body.innerText.includes("Alteração salva.")')

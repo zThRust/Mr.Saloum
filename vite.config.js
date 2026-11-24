@@ -2,13 +2,21 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { fileURLToPath } from 'node:url'
 
 export default defineConfig({
+  build: {
+    rollupOptions: {
+      input: ['index.html', 'admin/index.html'].map((path) => fileURLToPath(new URL(path, import.meta.url))),
+    },
+  },
   plugins: [
     react(),
     VitePWA({
-      registerType: 'prompt',
-      injectRegister: 'auto',
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
+      injectRegister: false,
 
       includeAssets: [
         'pwa-192.png',
@@ -45,12 +53,8 @@ export default defineConfig({
         ],
       },
 
-      workbox: {
-        navigateFallback: '/index.html',
-        globPatterns: [
-          '**/*.{js,css,html,svg,png,ico,woff2}',
-        ],
-        runtimeCaching: [],
+      injectManifest: {
+        globPatterns: ['assets/**/*.{js,css,svg,png,jpg,webp,woff2}'],
       },
     }),
   ],

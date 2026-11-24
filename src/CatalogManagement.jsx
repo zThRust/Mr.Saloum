@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { calcularDuracaoSlots, SERVICE_SOBRANCELHA_ID } from './bookingValues'
+import BarberPhotoField from './BarberPhotoField'
+import { resolvePhotoDraft } from './barberPhotoStorage'
+import { holdUpdate, useUpdateBlock } from './pwaUpdate'
 
 const fields = {
   barber: [
     { key: 'name', label: 'Nome', required: true },
-    { key: 'photo_url', label: 'URL da foto', type: 'url' },
     { key: 'profile_id', label: 'UUID do perfil existente', required: true, createOnly: true,
       pattern: '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' }
   ],
@@ -41,6 +43,9 @@ export default function CatalogManagement({ kind, onChange, onDenied, canEditCon
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [photoDraft, setPhotoDraft] = useState(null)
+  const pending = useRef(false)
+  useUpdateBlock(Boolean(editor))
 
   const loadCatalog = useCallback(async () => {
     try {
@@ -71,6 +76,7 @@ export default function CatalogManagement({ kind, onChange, onDenied, canEditCon
   async function reloadCatalog(refreshDashboard = false) {
     setCatalog(null)
     setEditor(null)
+    setPhotoDraft(null)
     setError('')
     setNotice('')
     setBusy(true)
@@ -91,11 +97,12 @@ export default function CatalogManagement({ kind, onChange, onDenied, canEditCon
   function requireReload(message) {
     setCatalog(null)
     setEditor(null)
+    setPhotoDraft(null)
     setError(message)
   }
 
-  async function mutate(kind, action, record, values = null) {
-    if (busy || !catalog) return
+  async function mutate(kind, action, record, values = null, photo = null) {
+    if (busy || pending.current || !catalog || photo?.kind === 'pending') return
     if (action !== 'create' && (!record?.id || !record.version)) {
       requireReload(errorMessages.MS004)
       return
@@ -103,10 +110,43 @@ export default function CatalogManagement({ kind, onChange, onDenied, canEditCon
     if (action === 'delete' && !window.confirm(`Excluir definitivamente “${record.name}”? Esta ação é irreversível.`)) return
 
     const unknownOutcome = 'Não foi possível confirmar a operação. Recarregue o catálogo e confira se ela foi aplicada antes de tentar novamente.'
+    pending.current = true
     setBusy(true)
     setError('')
     setNotice('')
+    const releaseUpdate = holdUpdate()
+    function reportFailure(error, status) {
+      if (error.code === '42501' || status === 401 || status === 403) onDenied(errorMessages['42501'])
+      else if (error.code === 'MS004') requireReload(errorMessages.MS004)
+      else if (errorMessages[error.code]) setError(errorMessages[error.code])
+      else if (!status || status >= 500 || status === 408) requireReload(unknownOutcome)
+      else setError('Não foi possível concluir a operação.')
+    }
+    let created = false
     try {
+      if (kind === 'barber' && action === 'create' && photo?.kind === 'upload') {
+        const { data, error, status } = await supabase.rpc('mr_saloum_criar_barbeiro_para_foto_v1', { p_values: values })
+        if (error) { reportFailure(error, status); return }
+        created = true
+        if (!data?.id || !data?.version) {
+          requireReload('Barbeiro cadastrado. Recarregue o catálogo e envie a foto pelo registro criado.')
+          return
+        }
+        record = { ...data, name: values.name }
+        action = 'update'
+        values = { name: record.name }
+      }
+      if (kind === 'barber' && values) {
+        try { values.photo_url = await resolvePhotoDraft(photo, record) }
+        catch (error) {
+          if (!created) { setError(error.message); return }
+          setEditor(null)
+          setPhotoDraft(null)
+          setNotice('Barbeiro cadastrado. Retome o envio da foto pelo registro criado.')
+          await Promise.allSettled([loadCatalog(), onChange()])
+          return
+        }
+      }
       const { error, status } = await supabase.rpc('mr_saloum_alterar_catalogo_v1', {
         p_kind: kind,
         p_action: action,
@@ -115,30 +155,30 @@ export default function CatalogManagement({ kind, onChange, onDenied, canEditCon
         p_values: values
       })
       if (error) {
-        if (error.code === '42501' || status === 401 || status === 403) {
-          onDenied(errorMessages['42501'])
-        } else if (error.code === 'MS004') requireReload(errorMessages.MS004)
-        else if (errorMessages[error.code]) setError(errorMessages[error.code])
-        else if (!status || status >= 500 || status === 408) requireReload(unknownOutcome)
-        else setError('Não foi possível concluir a operação.')
+        if (created) requireReload('Barbeiro cadastrado. Recarregue o catálogo, confira a foto atual e retome pelo registro criado.')
+        else reportFailure(error, status)
         return
       }
       setEditor(null)
+      setPhotoDraft(null)
       setNotice('Alteração salva.')
       const [, refresh] = await Promise.allSettled([loadCatalog(), onChange()])
       if (refresh.status !== 'fulfilled' || !refresh.value) {
         setNotice('Alteração salva. Recarregue o painel para atualizar a agenda e o agendamento manual.')
       }
     } catch {
-      requireReload(unknownOutcome)
+      requireReload(created ? 'Barbeiro cadastrado. Recarregue o catálogo e confira a foto antes de tentar novamente.' : unknownOutcome)
     } finally {
+      pending.current = false
       setBusy(false)
+      releaseUpdate()
     }
   }
 
   function startEditor(kind, record = null) {
     setError('')
     setNotice('')
+    setPhotoDraft(null)
     setEditor({ kind, record })
   }
 
@@ -156,11 +196,12 @@ export default function CatalogManagement({ kind, onChange, onDenied, canEditCon
       setError('Informe um nome válido.')
       return
     }
-    mutate(kind, record ? 'update' : 'create', record, values)
+    mutate(kind, record ? 'update' : 'create', record, values, photoDraft)
   }
 
   const isBarber = kind === 'barber'
-  const records = isBarber ? catalog?.barbers : catalog?.services
+  const list = isBarber ? catalog?.barbers : catalog?.services
+  const records = list && [...list].sort((a, b) => Number(b.active) - Number(a.active))
 
   return (
     <section className="admin-catalog">
@@ -190,7 +231,8 @@ export default function CatalogManagement({ kind, onChange, onDenied, canEditCon
                           <input {...constraints} name={key} defaultValue={editor.record?.[key] ?? ''} />
                         </label>
                       ))}
-                      <button type="submit">{actionLabels[editor.record ? 'update' : 'create']}</button>
+                      {isBarber && <BarberPhotoField barberId={editor.record?.id} existing={editor.record?.photo_url} draft={photoDraft} onChange={setPhotoDraft} />}
+                      <button type="submit" disabled={photoDraft?.kind === 'pending'}>{actionLabels[editor.record ? 'update' : 'create']}</button>
                       <button type="button" onClick={() => setEditor(null)}>Cancelar edição</button>
                     </fieldset>
                   </form>
@@ -198,8 +240,12 @@ export default function CatalogManagement({ kind, onChange, onDenied, canEditCon
                 {records.length === 0 && <p>Nenhum cadastro.</p>}
                 {records.length > 0 && (
                   <ul>
-                    {records.map((record) => (
-                      <li key={record.id}>
+                    {records.map((record, index) => (
+                      <Fragment key={record.id}>
+                      {record.active !== records[index - 1]?.active && (
+                        <li className="admin-catalog-divider"><h3>{record.active ? 'Ativos' : 'Inativos'}</h3></li>
+                      )}
+                      <li>
                         <div className="admin-record-identity">
                           {isBarber && (record.photo_url ? <img src={record.photo_url} alt="" /> : <span className="admin-record-avatar" aria-hidden="true">{record.name.charAt(0)}</span>)}
                           <div>
@@ -223,6 +269,7 @@ export default function CatalogManagement({ kind, onChange, onDenied, canEditCon
                           )}
                         </div>
                       </li>
+                      </Fragment>
                     ))}
                   </ul>
                 )}

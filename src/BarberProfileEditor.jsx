@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { barberProfileFailure, barberProfilePayload, editableBarberProfiles } from './barberProfile'
+import BarberPhotoField from './BarberPhotoField'
+import { resolvePhotoDraft } from './barberPhotoStorage'
+import { holdUpdate, useUpdateBlock } from './pwaUpdate'
 
 async function loadProfiles(profile) {
   try {
@@ -18,9 +21,11 @@ export default function BarberProfileEditor({ profile, onChange, targetId, onClo
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [photoDraft, setPhotoDraft] = useState(null)
   const pending = useRef(false)
   const showForm = Boolean(targetId) || open
   const record = targetId ? records.find(({ id }) => id === targetId) : records[0]
+  useUpdateBlock(showForm)
 
   useEffect(() => {
     let current = true
@@ -41,6 +46,7 @@ export default function BarberProfileEditor({ profile, onChange, targetId, onClo
     try {
       const profiles = await loadProfiles({ role, barber_id })
       setRecords(profiles)
+      setPhotoDraft(null)
       if (!profiles.length) setError('A edição de contato está indisponível para esta sessão.')
     } finally {
       pending.current = false
@@ -50,9 +56,9 @@ export default function BarberProfileEditor({ profile, onChange, targetId, onClo
 
   async function save(event) {
     event.preventDefault()
-    if (pending.current || !record) return
+    if (pending.current || !record || photoDraft?.kind === 'pending') return
     const form = new FormData(event.currentTarget)
-    const payload = barberProfilePayload(record, form.get('photo'), form.get('phone'))
+    const payload = barberProfilePayload(record, record.photo_url ?? '', form.get('phone'))
     if (payload.error) {
       setError(payload.error)
       return
@@ -61,7 +67,17 @@ export default function BarberProfileEditor({ profile, onChange, targetId, onClo
     setBusy(true)
     setError('')
     setNotice('')
+    const releaseUpdate = holdUpdate()
     let result
+    try {
+      payload.p_photo_url = await resolvePhotoDraft(photoDraft, record)
+    } catch (error) {
+      setError(error.message)
+      pending.current = false
+      setBusy(false)
+      releaseUpdate()
+      return
+    }
     try {
       result = await supabase.rpc('mr_saloum_atualizar_perfil_barbeiro_v1', payload)
     } catch {
@@ -70,7 +86,7 @@ export default function BarberProfileEditor({ profile, onChange, targetId, onClo
     try {
       if (result.error) {
         const failure = barberProfileFailure(result.error, result.status)
-        if (failure.invalidate) setRecords([])
+        if (failure.invalidate) { setRecords([]); setPhotoDraft(null) }
         setError(failure.message)
         return
       }
@@ -78,12 +94,14 @@ export default function BarberProfileEditor({ profile, onChange, targetId, onClo
         loadProfiles({ role, barber_id }), onChange()
       ])
       setRecords(profiles.status === 'fulfilled' ? profiles.value : [])
+      setPhotoDraft(null)
       setNotice(refresh.status === 'fulfilled' && refresh.value
         ? 'Contato atualizado.'
         : 'Contato atualizado. Recarregue o painel para atualizar a agenda.')
     } finally {
       pending.current = false
       setBusy(false)
+      releaseUpdate()
     }
   }
 
@@ -91,7 +109,10 @@ export default function BarberProfileEditor({ profile, onChange, targetId, onClo
 
   return (
     <section className="admin-catalog">
-      <button type="button" aria-expanded={showForm} disabled={busy} onClick={targetId ? onClose : () => setOpen(!open)}>
+      <button type="button" aria-expanded={showForm} disabled={busy} onClick={targetId ? onClose : () => {
+        setPhotoDraft(null)
+        setOpen(!open)
+      }}>
         {showForm ? 'Fechar edição de contato' : 'Editar meu contato'}
       </button>
       {showForm && (
@@ -103,15 +124,12 @@ export default function BarberProfileEditor({ profile, onChange, targetId, onClo
               <form key={`${record.id}:${record.version}`} onSubmit={save}>
                 <fieldset disabled={busy}>
                   <legend>Contato de {record.name}</legend>
-                  <label>
-                    URL HTTPS da foto
-                    <input type="url" name="photo" defaultValue={record.photo_url ?? ''} />
-                  </label>
+                  <BarberPhotoField barberId={record.id} existing={record.photo_url} draft={photoDraft} onChange={setPhotoDraft} />
                   <label>
                     Telefone de contato com DDD
                     <input type="tel" name="phone" defaultValue={record.whatsapp ?? ''} />
                   </label>
-                  <button type="submit">Salvar contato</button>
+                  <button type="submit" disabled={photoDraft?.kind === 'pending'}>Salvar contato</button>
                 </fieldset>
               </form>
             </>

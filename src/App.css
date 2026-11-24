@@ -5981,6 +5981,65 @@ main.public-site .navbar-actions .nav-button {
   display: none;
 }
 
+.admin-calendar-step {
+  min-width: 40px;
+  min-height: 40px;
+  border: 1px solid #665236;
+  border-radius: 8px;
+  background: #27231c;
+  color: #e5c38c;
+  cursor: pointer;
+}
+
+.admin-calendar-event.is-past {
+  row-gap: 6px;
+}
+
+.admin-calendar-event.is-past::after { display: none; }
+
+.admin-calendar-event.is-past .admin-calendar-add-past-button {
+  position: static;
+  transform: none;
+  grid-column: 2 / -1;
+  justify-self: start;
+  min-height: 36px;
+  white-space: normal;
+}
+
+.admin-photo-field { display: grid; gap: 8px; }
+.admin-photo-field img { width: 104px; height: 104px; border-radius: 50%; object-fit: cover; }
+.admin-photo-field p { margin: 0; color: #d4c5ad; }
+.admin-catalog-divider h3 { margin: 0; font-size: .88rem; color: #e5c38c; }
+
+.pwa-update-banner {
+  position: fixed;
+  z-index: 10000;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  width: min(370px, calc(100% - 24px));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid #725a37;
+  border-radius: 10px;
+  background: #24211d;
+  color: #f4e7d3;
+  font-size: .85rem;
+  box-shadow: 0 3px 18px #0008;
+}
+
+.pwa-update-banner button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 7px;
+  background: #d0aa70;
+  color: #15110a;
+  padding-inline: 10px;
+}
+
+.pwa-update-banner button:disabled { opacity: .55; }
+
 .admin-shell {
   min-height: 100vh;
   background: #111;

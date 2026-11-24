@@ -8,6 +8,7 @@ import { adminSections } from './adminSections'
 import { editableBarberProfiles } from './barberProfile'
 import { appointmentSwipeAction, historicalBarbers } from './barberCalendarNavigation'
 import { calcularDuracaoSlots, SERVICE_SOBRANCELHA_ID, totalItensRegistrados } from './bookingValues'
+import { useUpdateBlock } from './pwaUpdate'
 const CatalogManagement = lazy(() => import('./CatalogManagement'))
 const BarberProfileEditor = lazy(() => import('./BarberProfileEditor'))
 
@@ -78,6 +79,8 @@ function AdminPage() {
   const [quickTimes, setQuickTimes] = useState([])
   const [quickTimesLoading, setQuickTimesLoading] = useState(false)
   const [quickPinnedSlot, setQuickPinnedSlot] = useState(null)
+  useUpdateBlock(Boolean(quickBookingOpen || quickSaving || loading || (!profile && (email || password)) ||
+    attendanceLoading || cancelLoading || swipeVisual || slotSwipeVisual || bloqueioEmAndamento))
 
   const FUSO_HORARIO = 'America/Fortaleza'
 
@@ -1950,6 +1953,7 @@ function AdminPage() {
                   type="button"
                   onClick={() => deslocarDataCalendario(-1)}
                   aria-label="Dia anterior"
+                  className="admin-calendar-step"
                   style={{ padding: '9px 13px' }}
                 >
                   ‹
@@ -1966,6 +1970,7 @@ function AdminPage() {
                   type="button"
                   onClick={() => deslocarDataCalendario(1)}
                   aria-label="Próximo dia"
+                  className="admin-calendar-step"
                   style={{ padding: '9px 13px' }}
                 >
                   ›
@@ -2518,6 +2523,8 @@ function ClienteApp() {
   const [bookingError, setBookingError] = useState('')
   const [bookingSuccess, setBookingSuccess] = useState('')
   const [bookingId, setBookingId] = useState(null)
+  useUpdateBlock(Boolean(authSubmitting || profileOpen || profileSaving || cancelLoading || bookingSubmitting ||
+    (!user && (customerName || customerPhone)) || (!bookingSuccess && (selectedServiceCount || selectedDate))))
 
   // Instalação opcional do PWA (sem modificar o banco).
   const [installPrompt, setInstallPrompt] = useState(null)
