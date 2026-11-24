@@ -5227,24 +5227,40 @@ main.public-site .service-card.selected h3 { color: #f2dfbd; }
    MR.SALOUM — SELEÇÃO DE BARBEIROS (AJUSTE RESPONSIVO)
    Fotos circulares, nomes abaixo e sem cartões retangulares.
    ===================================================== */
+main.public-site .booking-workspace .barbers > .section-heading {
+  margin-bottom: 14px;
+  text-align: center;
+}
+
+main.public-site .barbers > .section-heading .eyebrow {
+  margin-bottom: 7px;
+}
+
+main.public-site .barbers > .section-heading p {
+  margin-top: 7px;
+}
+
 main.public-site .barber-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(112px, 142px));
+  --barber-card-width: 122px;
+  --barber-avatar-size: 88px;
+  --barber-column-gap: clamp(8px, 1.8vw, 24px);
+  display: flex;
+  flex-wrap: wrap;
   justify-content: center;
-  align-items: start;
-  gap: 22px 26px;
+  align-items: stretch;
+  gap: 18px var(--barber-column-gap);
   width: 100%;
-  max-width: 620px;
+  max-width: 590px;
   margin: 0 auto;
-  padding: 8px 0 12px;
+  padding: 4px 0 8px;
   overflow: visible;
 }
 
 main.public-site .barber-card {
-  width: 100%;
+  width: min(var(--barber-card-width), max(88px, calc((100% - 2 * var(--barber-column-gap)) / 3)), 100%);
   min-width: 0;
   min-height: 0;
-  flex: initial;
+  flex: 0 0 auto;
   padding: 5px 4px 8px;
   display: flex;
   flex-direction: column;
@@ -5269,9 +5285,10 @@ main.public-site .barber-card:hover {
 }
 
 main.public-site .barber-avatar {
-  width: 88px;
-  height: 88px;
-  flex: 0 0 88px;
+  width: min(var(--barber-avatar-size), 100%);
+  height: auto;
+  aspect-ratio: 1;
+  flex: 0 0 auto;
   margin: 0;
   overflow: hidden;
   border: 2px solid rgba(198,166,106,.52);
@@ -5291,6 +5308,7 @@ main.public-site .barber-avatar img {
 
 main.public-site .barber-card h3 {
   position: relative;
+  max-width: 100%;
   margin: 0;
   padding-bottom: 5px;
   color: #eee9df;
@@ -5298,6 +5316,7 @@ main.public-site .barber-card h3 {
   line-height: 1.2;
   font-weight: 600;
   text-align: center;
+  overflow-wrap: anywhere;
 }
 
 /* Pequeno traço sob o nome, sem criar outro cartão ou etiqueta. */
@@ -5342,42 +5361,22 @@ main.public-site .barber-card:focus-visible .barber-avatar {
 
 @media (max-width: 700px) {
   main.public-site .barber-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    justify-content: stretch;
-    gap: 15px 8px;
-    padding: 8px 2px 10px;
-    overflow: visible;
+    --barber-card-width: clamp(88px, 25vw, 108px);
+    --barber-avatar-size: clamp(68px, 20vw, 84px);
+    row-gap: 12px;
   }
 
   main.public-site .barber-card {
-    min-width: 0;
-    width: 100%;
-    padding: 4px 1px 7px;
+    padding: 4px 2px 7px;
     gap: 8px;
   }
 
-  main.public-site .barber-avatar {
-    width: clamp(70px, 20vw, 84px);
-    height: clamp(70px, 20vw, 84px);
-    flex-basis: clamp(70px, 20vw, 84px);
-  }
-
   main.public-site .barber-card h3 {
-    max-width: 100%;
     font-size: 12px;
-    overflow-wrap: anywhere;
   }
 }
 
 @media (max-width: 360px) {
-  main.public-site .barber-grid {
-    column-gap: 4px;
-  }
-  main.public-site .barber-avatar {
-    width: 68px;
-    height: 68px;
-    flex-basis: 68px;
-  }
   main.public-site .barber-card h3 {
     font-size: 11px;
   }
