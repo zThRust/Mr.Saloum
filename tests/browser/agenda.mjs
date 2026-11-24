@@ -89,19 +89,19 @@ function installMock() {
     const url = new URL(request.url)
     if (url.origin === location.origin) return fetchLocal(request)
     if (url.origin !== 'http://127.0.0.1:59887') throw new Error('Origem fora do mock')
-    if (url.pathname.startsWith('/storage/v1/object/barber-photos/')) {
-      const path = url.pathname.split('/').slice(-2).join('/')
-      const multipart = await request.formData()
-      const blob = [...multipart.values()].find((part) => part instanceof Blob)
+    if (url.pathname === '/functions/v1/barber-photo-upload') {
+      const path = request.headers.get('x-barber-id') + '/' + crypto.randomUUID() + '.webp'
+      const blob = new Blob([await request.arrayBuffer()], { type: 'image/webp' })
       const bitmap = await createImageBitmap(blob)
       window.testCalls.push({ name: 'upload-photo', path, size: blob.size, type: blob.type,
         width: bitmap.width, height: bitmap.height, upsert: request.headers.get('x-upsert') })
       bitmap.close()
       if ((!master && !path.startsWith(user.id + '/')) || window.rejectPhotoUpload) {
-        return Response.json({ message: 'Upload bloqueado' }, { status: 403 })
+        return Response.json({ message: 'Upload bloqueado. A foto atual foi preservada.' }, { status: 403 })
       }
-      return Response.json({ Key: `barber-photos/${path}` })
+      return Response.json({ public_url: url.origin + '/storage/v1/object/public/barber-photos/' + path })
     }
+    if (url.pathname.startsWith('/storage/v1/object/barber-photos/')) throw new Error('Upload direto proibido')
     const name = url.pathname.split('/').at(-1)
     const body = request.method === 'POST' ? await request.json() : null
     const projection = url.searchParams.get('select')?.split(',').sort().join(',')

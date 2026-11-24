@@ -16,7 +16,7 @@ try {
   $configNew = [IO.File]::ReadAllText((Join-Path $root 'vite.config.js'))
   $mainNew = [IO.File]::ReadAllText((Join-Path $root 'src/main.jsx'))
   New-Item -ItemType Directory -Path $target | Out-Null
-  Copy-Item -LiteralPath @('src', 'public', 'admin') -Destination $target -Recurse
+  Copy-Item -LiteralPath @('src', 'public', 'admin', 'scripts') -Destination $target -Recurse
   $checks = Join-Path $target 'checks'
   New-Item -ItemType Directory -Path $checks | Out-Null
   $unitTests = Get-ChildItem -LiteralPath 'tests' -File -Filter '*.test.js' | ForEach-Object {
