@@ -118,6 +118,9 @@ export default function CatalogManagement({ kind, onChange, onDenied, canEditCon
     function reportFailure(error, status) {
       if (error.code === '42501' || status === 401 || status === 403) onDenied(errorMessages['42501'])
       else if (error.code === 'MS004') requireReload(errorMessages.MS004)
+      else if (error.code === 'MS002' && action === 'deactivate') {
+        setError('O banco protege este cadastro contra desativação.')
+      }
       else if (errorMessages[error.code]) setError(errorMessages[error.code])
       else if (!status || status >= 500 || status === 408) requireReload(unknownOutcome)
       else setError('Não foi possível concluir a operação.')
@@ -261,9 +264,14 @@ export default function CatalogManagement({ kind, onChange, onDenied, canEditCon
                           {isBarber && canEditContact?.(record.id) && (
                             <button type="button" disabled={busy} onClick={() => onEditContact(record.id)}>Foto e contato</button>
                           )}
-                          <button type="button" disabled={busy} onClick={() => mutate(kind, record.active ? 'deactivate' : 'reactivate', record)}>
-                            {actionLabels[record.active ? 'deactivate' : 'reactivate']}
-                          </button>
+                          {(!record.active || record.can_deactivate !== false) && (
+                            <button type="button" disabled={busy} onClick={() => mutate(kind, record.active ? 'deactivate' : 'reactivate', record)}>
+                              {actionLabels[record.active ? 'deactivate' : 'reactivate']}
+                            </button>
+                          )}
+                          {record.active && record.can_deactivate === false && (
+                            <small>Desativação indisponível enquanto houver agendamentos futuros ou em andamento.</small>
+                          )}
                           {record.can_delete === true && (
                             <button type="button" disabled={busy} onClick={() => mutate(kind, 'delete', record)}>{actionLabels.delete}</button>
                           )}
