@@ -4423,6 +4423,21 @@ main.public-site .brand-mark {
   font-size: 21px;
 }
 
+main.public-site > .navbar .brand {
+  flex: 0 0 auto;
+}
+
+main.public-site .brand-logo {
+  display: block;
+  width: auto;
+  height: 88px;
+  object-fit: contain;
+}
+
+html:has(main.public-site > .navbar) {
+  scroll-padding-top: 90px;
+}
+
 main.public-site .navbar nav {
   gap: clamp(14px, 2.3vw, 34px);
 }
@@ -4776,6 +4791,10 @@ main.public-site footer {
 }
 
 @media (max-width: 900px) {
+  main.public-site .brand-logo {
+    height: 80px;
+  }
+
   main.public-site .booking-workspace {
     grid-template-columns: minmax(0,1fr) minmax(340px,.9fr);
     gap: 12px;
@@ -5227,16 +5246,16 @@ main.public-site .service-card.selected h3 { color: #f2dfbd; }
    MR.SALOUM — SELEÇÃO DE BARBEIROS (AJUSTE RESPONSIVO)
    Fotos circulares, nomes abaixo e sem cartões retangulares.
    ===================================================== */
-main.public-site .booking-workspace .barbers > .section-heading {
+main.public-site .booking-workspace :is(.barbers, .services) > .section-heading {
   margin-bottom: 14px;
   text-align: center;
 }
 
-main.public-site .barbers > .section-heading .eyebrow {
+main.public-site :is(.barbers, .services) > .section-heading .eyebrow {
   margin-bottom: 7px;
 }
 
-main.public-site .barbers > .section-heading p {
+main.public-site :is(.barbers, .services) > .section-heading p {
   margin-top: 7px;
 }
 
@@ -5431,9 +5450,13 @@ main.public-site .navbar-actions .nav-button {
 }
 
 @media (max-width: 700px) {
+  html:has(main.public-site > .navbar) {
+    scroll-padding-top: 79px;
+  }
+
   main.public-site > .navbar {
     min-height: 68px;
-    padding: 10px 16px;
+    padding: 5px 16px;
     display: flex;
     flex-wrap: nowrap;
     align-items: center;
@@ -5473,6 +5496,10 @@ main.public-site .navbar-actions .nav-button {
     width: 30px;
     height: 30px;
     font-size: 18px;
+  }
+
+  main.public-site .brand-logo {
+    height: 68px;
   }
 }
 

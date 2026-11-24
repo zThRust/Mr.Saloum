@@ -731,8 +731,13 @@ function ClienteApp() {
     <main className="public-site">
       <header className="navbar">
         <a className="brand" href="#inicio">
-          <span className="brand-mark">M</span>
-          <span>MR.SAL<span className="gold">OUM</span></span>
+          <img
+            className="brand-logo"
+            src="/mr-saloum-logo-header.webp"
+            alt="Mr.Saloum Barbearia"
+            width="400"
+            height="460"
+          />
         </a>
 
         <nav>
