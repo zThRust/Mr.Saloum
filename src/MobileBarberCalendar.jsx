@@ -1,8 +1,7 @@
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import { barberSwipeDestination, barberSwipeStart, selectedBarberIndex } from './barberCalendarNavigation'
 
-export default function MobileBarberCalendar({ enabled, barbers, renderBarber }) {
-  const [selectedId, setSelectedId] = useState('')
+export default function MobileBarberCalendar({ enabled, barbers, selectedId, setSelectedId, renderBarber }) {
   const touchStart = useRef(null)
   const index = selectedBarberIndex(barbers, selectedId)
   const selected = barbers[index]

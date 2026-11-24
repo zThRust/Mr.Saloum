@@ -5981,6 +5981,124 @@ main.public-site .navbar-actions .nav-button {
   display: none;
 }
 
+.admin-shell {
+  min-height: 100vh;
+  background: #111;
+  color: #f5f5f5;
+  font-family: 'DM Sans', sans-serif;
+}
+
+.admin-shell-header {
+  background: #191816;
+  border-bottom: 1px solid #383124;
+}
+
+.admin-shell-top,
+.admin-shell-nav,
+.admin-shell-content {
+  width: min(100% - 48px, 1660px);
+  margin-inline: auto;
+}
+
+.admin-shell-top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding-block: 12px;
+}
+
+.admin-shell-brand { font-size: 1.18rem; letter-spacing: .08em; }
+.admin-shell-brand span { color: #c5a46d; }
+.admin-shell-account { display: grid; justify-items: end; min-width: 0; }
+.admin-shell-account strong { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-shell-account span { color: #c0b8a8; font-size: .73rem; }
+
+.admin-shell button {
+  font-family: inherit;
+}
+
+.admin-shell-top button,
+.admin-workspace-panel button {
+  border: 1px solid #504637;
+  border-radius: 8px;
+  background: #25221e;
+  color: #f2e9d8;
+  padding: 8px 12px;
+  min-height: 40px;
+  cursor: pointer;
+}
+
+.admin-shell button:focus-visible,
+.admin-shell input:focus-visible,
+.admin-shell select:focus-visible {
+  outline: 2px solid #e5b878;
+  outline-offset: 2px;
+}
+
+.admin-shell-nav {
+  display: flex;
+  gap: 6px;
+}
+
+.admin-shell-nav button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 45px;
+  padding: 4px 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #c0b8a8;
+  font-size: .86rem;
+  cursor: pointer;
+}
+
+.admin-shell-nav button[aria-current="page"] {
+  border-bottom-color: #e5b878;
+  color: #f4d5a4;
+  background: #29231b;
+}
+
+.admin-shell-nav svg { width: 17px; height: 17px; flex: none; }
+.admin-shell-content { min-width: 0; padding-block: 20px 86px; }
+.admin-workspace-panel {
+  padding: clamp(12px, 2vw, 22px);
+  border: 1px solid #383124;
+  border-radius: 12px;
+  background: #1b1a18;
+  overflow-wrap: anywhere;
+}
+.admin-workspace-panel h1, .admin-finance-section h1 { margin: 0 0 12px; font-size: 1.4rem; }
+.admin-settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 10px; }
+.admin-settings-grid section { padding: 12px; border: 1px solid #3c3429; border-radius: 8px; }
+.admin-settings-grid h2 { font-size: 1rem; margin: 0 0 8px; }
+.admin-settings-grid p { font-size: .87rem; color: #c0b8a8; margin: 0; }
+.admin-team-list { padding: 0; margin: 0; list-style: none; }
+.admin-team-list li { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 11px 0; border-bottom: 1px solid #3c3429; }
+.admin-record-identity { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.admin-record-identity img, .admin-record-avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; }
+.admin-record-avatar { display: grid; place-items: center; background: #352b1d; color: #f4d5a4; }
+.admin-record-identity small { display: block; color: #c0b8a8; }
+.admin-record-status { padding: 2px 7px; border: 1px solid #5e554a; border-radius: 5px; color: #c8c0b5; font-size: .75rem; }
+.admin-record-status[data-active="true"] { border-color: #456149; color: #b8ddbd; }
+.admin-workspace-panel .admin-primary-button { background: #d4ae72; color: #17130d; font-weight: 700; }
+.admin-finance-period { display: grid; gap: 5px; color: #c9bead; font-size: .8rem; }
+.admin-finance-period input { color-scheme: dark; background: #25221e; color: #f2e9d8; border: 1px solid #504637; border-radius: 8px; padding: 8px; }
+
+@media (max-width: 680px) {
+  .admin-shell-top, .admin-shell-nav, .admin-shell-content { width: calc(100% - 20px); }
+  .admin-shell-top { gap: 9px; padding-block: 8px; }
+  .admin-shell-brand { font-size: .95rem; }
+  .admin-shell-account { font-size: .85rem; }
+  .admin-shell-nav { gap: 2px; }
+  .admin-shell-nav button { flex: 1; flex-direction: column; gap: 3px; font-size: .72rem; padding-inline: 1px; }
+  .admin-shell-content { padding-top: 12px; }
+}
+
 .admin-catalog {
   margin-bottom: 25px;
 }

@@ -1,8 +1,11 @@
 
 import './App.css'
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabase'
 import MobileBarberCalendar from './MobileBarberCalendar'
+import AdminNavigation from './AdminNavigation'
+import { adminSections } from './adminSections'
+import { editableBarberProfiles } from './barberProfile'
 import { appointmentSwipeAction, historicalBarbers } from './barberCalendarNavigation'
 import { calcularDuracaoSlots, SERVICE_SOBRANCELHA_ID, totalItensRegistrados } from './bookingValues'
 const CatalogManagement = lazy(() => import('./CatalogManagement'))
@@ -20,6 +23,16 @@ function AdminPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [profile, setProfile] = useState(null)
+  const [section, setSection] = useState('agenda')
+  const [catalogAccess, setCatalogAccess] = useState({ userId: null, allowed: false })
+  const [teamProfiles, setTeamProfiles] = useState({ userId: null, records: [] })
+  const [contactTarget, setContactTarget] = useState('')
+  const [mobileBarberId, setMobileBarberId] = useState('')
+  const [financeDate, setFinanceDate] = useState('')
+  const canManageCatalog = Boolean(profile?.role === 'admin' && catalogAccess.userId === profile.userId && catalogAccess.allowed)
+  const editableTeam = teamProfiles.userId === profile?.userId ? teamProfiles.records : []
+  const sections = adminSections({ role: profile?.role, catalog: canManageCatalog, editableProfiles: editableTeam })
+  const activeSection = sections.some(({ id }) => id === section) ? section : 'agenda'
   const [appointments, setAppointments] = useState([])
   const [cancelLoading, setCancelLoading] = useState('')
   const [attendanceLoading, setAttendanceLoading] = useState('')
@@ -38,6 +51,7 @@ function AdminPage() {
     }).format(new Date())
   )
   const [modoAgenda, setModoAgenda] = useState('calendario')
+  const selectedFinanceDate = financeDate || dataCalendario
   const [disponibilidadeCalendario, setDisponibilidadeCalendario] = useState({})
   const [carregandoDisponibilidade, setCarregandoDisponibilidade] = useState(false)
   const [bloqueiosCalendario, setBloqueiosCalendario] = useState({})
@@ -49,6 +63,7 @@ function AdminPage() {
 
   // Agendamento rápido
   const [quickBookingOpen, setQuickBookingOpen] = useState(false)
+  const quickDialogRef = useRef(null)
   const [quickLoading, setQuickLoading] = useState(false)
   const [quickSaving, setQuickSaving] = useState(false)
   const [quickError, setQuickError] = useState('')
@@ -84,6 +99,13 @@ function AdminPage() {
 
     return () => clearInterval(intervalo)
   }, [])
+
+  useEffect(() => {
+    if (!quickBookingOpen) return
+    const previousFocus = document.activeElement
+    quickDialogRef.current?.focus()
+    return () => previousFocus?.focus()
+  }, [quickBookingOpen])
 
   // Fechar modal com ESC
   useEffect(() => {
@@ -251,9 +273,21 @@ function AdminPage() {
   async function atualizarAposAlterarCatalogo() {
     const [catalogoAtualizado, agendaAtualizada] = await Promise.all([
       carregarDadosAgendamentoRapido({ atualizarFiltro: true }),
-      atualizarAgenda()
+      atualizarAgenda(),
+      atualizarContatosDaEquipe()
     ])
     return catalogoAtualizado && agendaAtualizada
+  }
+
+  async function atualizarContatosDaEquipe() {
+    if (profile?.role !== 'admin') return
+    const { data, error } = await supabase.rpc('mr_saloum_listar_perfis_editaveis_v1')
+    setTeamProfiles({ userId: profile.userId, records: error ? [] : editableBarberProfiles(data, { role: 'admin' }) })
+  }
+
+  async function atualizarAposAlterarContato() {
+    const [updated] = await Promise.allSettled([carregarDadosAgendamentoRapido(), atualizarContatosDaEquipe()])
+    return updated.status === 'fulfilled' && updated.value
   }
 
   async function carregarPainel(usuario) {
@@ -708,16 +742,45 @@ function AdminPage() {
     }, 180)
   }
 
+  const adminId = profile?.role === 'admin' ? profile.userId : null
+  const negarAcessoCatalogo = useCallback((message) => {
+    setCatalogAccess({ userId: adminId, allowed: false })
+    setError(message)
+  }, [adminId])
+  useEffect(() => {
+    if (!adminId) return
+    let active = true
+    async function checkAccess() {
+      try {
+        const { data, error } = await supabase.rpc('mr_saloum_pode_gerenciar_catalogo_v1')
+        if (active) setCatalogAccess({ userId: adminId, allowed: !error && data === true })
+      } catch {
+        if (active) setCatalogAccess({ userId: adminId, allowed: false })
+      }
+    }
+    async function listContacts() {
+      try {
+        const { data, error } = await supabase.rpc('mr_saloum_listar_perfis_editaveis_v1')
+        if (active && !error) setTeamProfiles({ userId: adminId, records: editableBarberProfiles(data, { role: 'admin' }) })
+      } catch {
+        // A aba usa somente os perfis autorizados na sessão.
+      }
+    }
+    checkAccess()
+    listContacts()
+    return () => { active = false }
+  }, [adminId])
+
   useEffect(() => {
     let ativo = true
 
     async function carregarFinanceiro() {
-      if (!profile || !dataCalendario) return
+      if (!profile || activeSection !== 'financeiro' || !selectedFinanceDate) return
 
       setFinanceLoading(true)
       const { data, error: financeError } = await supabase.rpc(
         'painel_financeiro',
-        { p_data: dataCalendario }
+        { p_data: selectedFinanceDate }
       )
 
       if (!ativo) return
@@ -738,7 +801,7 @@ function AdminPage() {
     return () => {
       ativo = false
     }
-  }, [profile?.role, profile?.barber_id, dataCalendario, appointments])
+  }, [profile, activeSection, selectedFinanceDate, appointments])
 
   useEffect(() => {
     let ativo = true
@@ -800,6 +863,13 @@ function AdminPage() {
     setQuickBookingOpen(false)
     setQuickBarbers([])
     setQuickServices([])
+    setSection('agenda')
+    setContactTarget('')
+    setMobileBarberId('')
+    setFinanceDate('')
+    setFinanceData([])
+    setCatalogAccess({ userId: null, allowed: false })
+    setTeamProfiles({ userId: null, records: [] })
   }
 
   const nomePerfil = profile?.name || 'Barbeiro'
@@ -807,10 +877,20 @@ function AdminPage() {
   const hoje = chaveData(horaAtual)
   const minutosAgora = minutosDoDia(horaAtual)
   const dataSelecionadaEhSabado = (() => {
-    if (!dataCalendario) return false
-    const [ano, mes, dia] = dataCalendario.split('-').map(Number)
+    if (!selectedFinanceDate) return false
+    const [ano, mes, dia] = selectedFinanceDate.split('-').map(Number)
     return new Date(Date.UTC(ano, mes - 1, dia, 12)).getUTCDay() === 6
   })()
+  const atendimentosDoFinanceiro = new Map()
+  if (activeSection === 'financeiro') {
+    for (const appointment of appointments) {
+      if (appointment.status === 'confirmed' && appointment.completed_at && appointment.barber_id &&
+          chaveData(appointment.starts_at) === selectedFinanceDate) {
+        const id = appointment.barber_id
+        atendimentosDoFinanceiro.set(id, (atendimentosDoFinanceiro.get(id) ?? 0) + 1)
+      }
+    }
+  }
 
   function moeda(valor) {
     return Number(valor || 0).toLocaleString('pt-BR', {
@@ -1271,15 +1351,7 @@ function AdminPage() {
 
   // Painel principal
   return (
-    <main
-      style={{
-        minHeight: '100vh',
-        background: '#111',
-        color: '#f5f5f5',
-        padding: '30px 5%',
-        fontFamily: 'DM Sans, sans-serif'
-      }}
-    >
+    <main className="admin-shell">
       {/* MODAL AGENDAMENTO RÁPIDO */}
       {quickBookingOpen && (
         <div
@@ -1299,6 +1371,11 @@ function AdminPage() {
           }}
         >
           <section
+            ref={quickDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="quick-booking-title"
+            tabIndex={-1}
             onClick={(event) => event.stopPropagation()}
             style={{
               width: '100%',
@@ -1333,7 +1410,7 @@ function AdminPage() {
                   PAINEL ADMINISTRATIVO
                 </span>
 
-                <h2 style={{ margin: '6px 0', fontSize: 22 }}>
+                <h2 id="quick-booking-title" style={{ margin: '6px 0', fontSize: 22 }}>
                   Agendamento rápido
                 </h2>
 
@@ -1720,74 +1797,26 @@ function AdminPage() {
         </div>
       )}
 
-      <header
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: 16,
-          marginBottom: 35
+      <div inert={quickBookingOpen ? true : undefined}>
+      <AdminNavigation
+        name={nomePerfil}
+        role={profile.role === 'admin' ? 'Administrador' : 'Barbeiro'}
+        sections={sections}
+        active={activeSection}
+        onLogout={sair}
+        onSelect={(id) => {
+          if (id === activeSection) return
+          setSection(id)
+          setContactTarget('')
+          setError('')
+          setSuccess('')
         }}
-      >
-        <div>
-          <div style={{ fontSize: 22, fontWeight: 700 }}>
-            MR.SAL<span style={{ color: '#c5a46d' }}>OUM</span>
-          </div>
+      />
 
-          <p style={{ color: '#aaa', margin: '6px 0' }}>
-            Painel administrativo
-          </p>
-        </div>
-
-        <button type="button" onClick={sair}>
-          Sair da conta
-        </button>
-      </header>
-
-      <section
-        style={{
-          background: '#1d1d1d',
-          border: '1px solid #333',
-          borderRadius: 12,
-          padding: 22,
-          marginBottom: 25
-        }}
-      >
-        <span style={{ color: '#c5a46d', fontSize: 12 }}>
-          CONTA CONECTADA
-        </span>
-
-        <h1 style={{ margin: '8px 0' }}>
-          {nomePerfil}
-        </h1>
-
-        <p style={{ color: '#aaa', margin: 0 }}>
-          {profile.role === 'admin'
-            ? 'Administrador — acesso a todas as agendas'
-            : 'Barbeiro — acesso restrito à própria agenda'}
-        </p>
-      </section>
-
-      <Suspense fallback={null}>
-        <BarberProfileEditor
-          key={profile.userId}
-          profile={profile}
-          onChange={carregarDadosAgendamentoRapido}
-        />
-      </Suspense>
-
-      {profile.role === 'admin' && (
-        <Suspense fallback={null}>
-          <CatalogManagement
-            key={profile.userId}
-            onChange={atualizarAposAlterarCatalogo}
-          />
-        </Suspense>
-      )}
+      <div className="admin-shell-content">
 
       {error && (
-        <div
+        <div role="alert"
           style={{
             background: '#3b2020',
             border: '1px solid #713838',
@@ -1802,7 +1831,7 @@ function AdminPage() {
       )}
 
       {success && (
-        <div
+        <div role="status"
           style={{
             background: '#1d3526',
             border: '1px solid #376447',
@@ -1816,6 +1845,8 @@ function AdminPage() {
         </div>
       )}
 
+      {activeSection === 'agenda' && (
+      <div data-admin-section="agenda">
       {/* CONTROLES E CALENDÁRIO PRINCIPAL */}
       <section
         style={{
@@ -1976,6 +2007,8 @@ function AdminPage() {
               <MobileBarberCalendar
                 enabled={profile.role === 'admin' && barbeiroVisualizado === 'all'}
                 barbers={barbeirosAgenda}
+                selectedId={mobileBarberId}
+                setSelectedId={setMobileBarberId}
                 renderBarber={(barber) => {
                   const agendamentosBarbeiro = agendamentosDoDia
                     .filter((appointment) => pertenceAoBarbeiro(appointment, barber.id) ||
@@ -2268,15 +2301,22 @@ function AdminPage() {
       </section>
       </>
       )}
+      </div>
+      )}
 
-      {/* FECHAMENTO FINANCEIRO — SOMENTE CORTES CONFIRMADOS COMO REALIZADOS */}
-      <section className="admin-finance-section">
+      {activeSection === 'financeiro' && (
+      <section className="admin-finance-section" data-admin-section="financeiro">
         <div className="admin-finance-heading">
           <div>
             <span>FECHAMENTO FINANCEIRO</span>
-            <h2>Resumo de {textoDataCalendario(dataCalendario)}</h2>
+            <h1>Financeiro</h1>
+            <h2>Resumo de {textoDataCalendario(selectedFinanceDate)}</h2>
             <p>Somente serviços ativos de agendamentos marcados como realizados.</p>
           </div>
+          <label className="admin-finance-period">
+            Data do financeiro
+            <input type="date" value={selectedFinanceDate} onChange={(event) => setFinanceDate(event.target.value)} />
+          </label>
           <span className="admin-finance-refresh">
             {financeLoading ? 'Atualizando…' : 'Valores atualizados'}
           </span>
@@ -2289,15 +2329,16 @@ function AdminPage() {
         ) : (
           <div className="admin-finance-grid">
             {financeData
-              .filter((item) => profile.role === 'admin'
-                ? barbeiroVisualizado === 'all' || item.barber_id === barbeiroVisualizado
-                : item.barber_id === profile.barber_id)
+              .filter((item) => profile.role === 'admin' || item.barber_id === profile.barber_id)
               .map((item) => (
                 <article className="admin-finance-card" key={item.barber_id}>
                   <h3>{item.barber_name}</h3>
                   <div className="admin-finance-main-value">
                     <span>Faturamento do dia</span>
                     <strong>{moeda(item.total_dia)}</strong>
+                    {atendimentosDoFinanceiro.has(item.barber_id) && (
+                      <small>{atendimentosDoFinanceiro.get(item.barber_id)} realizado(s) na agenda</small>
+                    )}
                   </div>
                   <div className="admin-finance-splits">
                     <div>
@@ -2325,7 +2366,68 @@ function AdminPage() {
           </p>
         )}
       </section>
+      )}
 
+      {['equipe', 'servicos'].includes(activeSection) && (
+        <section className="admin-workspace-panel" data-admin-section={activeSection}>
+          <h1>{activeSection === 'equipe' ? 'Equipe' : 'Serviços'}</h1>
+          <Suspense fallback={<p role="status">Carregando…</p>}>
+            {contactTarget && activeSection === 'equipe' ? (
+              <BarberProfileEditor key={contactTarget} profile={profile} targetId={contactTarget} onClose={() => setContactTarget('')} onChange={atualizarAposAlterarContato} />
+            ) : canManageCatalog ? (
+              <CatalogManagement
+                key={activeSection}
+                kind={activeSection === 'equipe' ? 'barber' : 'service'}
+                onChange={atualizarAposAlterarCatalogo}
+                onDenied={negarAcessoCatalogo}
+                canEditContact={(id) => editableTeam.some((record) => record.id === id)}
+                onEditContact={setContactTarget}
+              />
+            ) : (
+              <ul className="admin-team-list">
+                {editableTeam.map((record) => (
+                  <li key={record.id}>
+                    <div className="admin-record-identity">
+                      {record.photo_url ? <img src={record.photo_url} alt="" /> : <span className="admin-record-avatar" aria-hidden="true">{record.name.charAt(0)}</span>}
+                      <strong>{record.name}</strong>
+                      <span className="admin-record-status" data-active={record.active}>{record.active ? 'Ativo' : 'Inativo'}</span>
+                    </div>
+                    <button type="button" onClick={() => setContactTarget(record.id)}>Foto e contato</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Suspense>
+        </section>
+      )}
+
+      {activeSection === 'configuracoes' && (
+        <section className="admin-workspace-panel" data-admin-section="configuracoes">
+          <h1>Configurações</h1>
+          <div className="admin-settings-grid">
+            <section><h2>Dados da barbearia</h2><p>MR.SALOUM Barbearia</p></section>
+            <section><h2>Meu perfil</h2><p>{nomePerfil}</p></section>
+            <section>
+              <h2>Configurações individuais</h2>
+              {profile.role === 'barber' ? (
+                <Suspense fallback={<p role="status">Carregando…</p>}>
+                  <BarberProfileEditor profile={profile} onChange={atualizarAposAlterarContato} />
+                </Suspense>
+              ) : editableTeam.length > 0 && (
+                <button type="button" onClick={() => setSection('equipe')}>Ver contatos da equipe</button>
+              )}
+            </section>
+            <section>
+              <h2>Horários de atendimento</h2>
+              <button type="button" onClick={() => setSection('agenda')}>Abrir agenda e bloqueios</button>
+            </section>
+            <section><h2>Notificações</h2><p>As preferências de notificações são administradas fora deste painel.</p></section>
+            <section><h2>Acesso e segurança</h2><p>{profile.role === 'admin' ? 'Conta administrativa' : 'Acesso à própria agenda e ao próprio financeiro.'}</p></section>
+          </div>
+        </section>
+      )}
+
+      {activeSection === 'agenda' && (
       <button
         type="button"
         onClick={abrirAgendamentoRapido}
@@ -2347,6 +2449,9 @@ function AdminPage() {
       >
         + Novo agendamento
       </button>
+      )}
+      </div>
+      </div>
     </main>
   )
 }

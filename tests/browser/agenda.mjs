@@ -107,14 +107,19 @@ function installMock() {
       services: service.active ? [service] : [],
       painel_agendamentos: [appointment('local-active', user.id, 'Aline'), appointment('local-history', historical.id, 'Eva')],
       painel_atendimentos: completed ? [{ appointment_id: 'local-active', completed_at: day + 'T07:00:00-03:00' }] : [],
-      painel_financeiro: [{ barber_id: historical.id, barber_name: 'Eva', total_dia: 42 }],
-      consultar_disponibilidade: [{ horario: '05:00', disponivel: true }],
+      painel_financeiro: [
+        { barber_id: historical.id, barber_name: 'Eva', total_dia: 42, total_semana: 132 },
+        { barber_id: user.id, barber_name: 'Aline', total_dia: 60, total_semana: 180 }
+      ],
+      consultar_disponibilidade: ['05:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00']
+        .map((horario) => ({ horario, disponivel: true })),
       mr_saloum_pode_gerenciar_catalogo_v1: master,
       mr_saloum_listar_catalogo_v1: {
         barbers: [...barbers.map((item) => ({ ...item, version: 'fixture-v1', can_delete: item.id === 'b' })), historical],
         services: [{ ...service, version: 'fixture-service', can_delete: false }]
       },
-      mr_saloum_listar_perfis_editaveis_v1: master ? [contact, historical] : location.search === '?barber' ? [contact] : []
+      mr_saloum_listar_perfis_editaveis_v1: master || location.search === '?admin-contact'
+        ? [contact, historical] : location.search === '?barber' ? [contact] : []
     }
     if (name === 'mr_saloum_atualizar_perfil_barbeiro_v1') {
       if (!window.allowProfileSave) return Response.json({ code: 'MS004', message: 'Fixture vencida' }, { status: 400 })
@@ -171,6 +176,12 @@ const clickButton = (label) => evaluate(`[...document.querySelectorAll("button")
 const viewport = (width, mobile) => cdp('Emulation.setDeviceMetricsOverride', {
   width, height: 844, deviceScaleFactor: 1, mobile
 })
+const navLabels = '[...document.querySelectorAll(".admin-shell-nav button")].map(button => button.textContent.trim())'
+async function openSection(label, id) {
+  await evaluate(`[...document.querySelectorAll('.admin-shell-nav button')].find(button => button.textContent.trim() === ${JSON.stringify(label)}).click()`)
+  await until(`document.querySelector('[data-admin-section]')?.dataset.adminSection === "${id}"`)
+  assert.deepEqual(await evaluate('[...document.querySelectorAll("[data-admin-section]")].map(node => node.dataset.adminSection)'), [id])
+}
 
 async function login(path) {
   await cdp('Page.navigate', { url: origin + path })
@@ -195,9 +206,14 @@ try {
   await viewport(390, true)
   await login('/admin')
   await until(`!!${booked} && !!${slot}`)
+  assert.equal(await evaluate('document.querySelector("[data-admin-section]").dataset.adminSection'), 'agenda')
   await until('testCalls.some(call => call.name === "mr_saloum_pode_gerenciar_catalogo_v1")')
-  assert.equal(await evaluate('document.body.innerText.includes("Gerenciar barbeiros e serviços")'), false)
+  assert.deepEqual(await evaluate(navLabels), ['Agenda', 'Financeiro', 'Configurações'])
   assert.equal(await evaluate('testCalls.some(call => call.name === "mr_saloum_listar_catalogo_v1")'), false)
+  await evaluate('document.querySelector(\'[aria-label="Criar agendamento presencial"]\').click()')
+  await until('document.activeElement?.getAttribute("role") === "dialog"')
+  await evaluate('document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))')
+  await until('!document.querySelector(\'[role="dialog"]\')')
   assert.equal(await evaluate(countVisible), 1)
   assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true)
 
@@ -212,8 +228,6 @@ try {
   await until('testCalls.some(call => call.name === "admin_cancelar_agendamento")')
   assert.equal(await evaluate(`${select}.selectedOptions[0].text`), 'Aline')
   assert.equal(await evaluate('testCalls.some(call => call.name === "consultar_disponibilidade" && call.body.p_barber_id.endsWith("0009"))'), false)
-  await until('document.querySelector(".admin-finance-grid")?.textContent.includes("Eva")')
-
   const originalDate = await evaluate(`${dateField}.value`)
   await evaluate('document.querySelector(\'[aria-label="Próximo dia"]\').click()')
   await until(`${dateField}.value !== ${JSON.stringify(originalDate)}`)
@@ -259,14 +273,41 @@ try {
   assert.equal(await evaluate(`${select}.value`), 'd')
   await evaluate(`${select}.value = "b"; ${select}.dispatchEvent(new Event("change", { bubbles: true }))`)
   await until(`${select}.value === "b"`)
-  await viewport(1280, false)
-  await until(`${countVisible} === 4`)
+  for (const width of [768, 1280, 1920]) {
+    await viewport(width, false)
+    await until(`innerWidth === ${width} && ${countVisible} === 4`)
+    assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true, `Largura ${width}`)
+  }
   await viewport(390, true)
   await until(`${countVisible} === 1 && ${select}.value === "b"`)
-  assert.equal(await evaluate('document.body.innerText.includes("Editar contato de barbeiro")'), false)
+  await openSection('Financeiro', 'financeiro')
+  await until('document.querySelector(".admin-finance-grid")?.textContent.includes("Eva")')
+  assert.equal(await evaluate('!!document.querySelector(".admin-calendar-columns")'), false)
+  await evaluate(`{
+    const input = document.querySelector('.admin-finance-period input')
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '2027-01-02')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  }`)
+  await until('testCalls.some(call => call.name === "painel_financeiro" && call.body.p_data === "2027-01-02")')
+  await until('document.querySelector(".admin-finance-weekly")?.textContent.includes("132,00")')
+  await openSection('Configurações', 'configuracoes')
+  await openSection('Agenda', 'agenda')
+  assert.equal(await evaluate(`${dateField}.value`), otherDate)
+  assert.equal(await evaluate(`${select}.value`), 'b')
+  await clickButton('Lista')
+  await openSection('Financeiro', 'financeiro')
+  await openSection('Agenda', 'agenda')
+  assert.equal(await evaluate('document.body.innerText.includes("Agendamentos confirmados")'), true)
+  await clickButton('Calendário')
   await evaluate('localStorage.clear()')
   await login('/admin?barber')
   await until(`!${select} && ${countVisible} === 1`)
+  assert.deepEqual(await evaluate(navLabels), ['Agenda', 'Financeiro', 'Configurações'])
+  await openSection('Financeiro', 'financeiro')
+  await until('document.querySelector(".admin-finance-grid")?.textContent.includes("Aline")')
+  assert.equal(await evaluate('document.querySelector(".admin-finance-grid").textContent.includes("Eva")'), false)
+  await openSection('Configurações', 'configuracoes')
   await until('document.body.innerText.includes("Editar meu contato")')
   await evaluate('[...document.querySelectorAll("button")].find(button => button.textContent === "Editar meu contato").click()')
   const fillContact = () => evaluate(`{
@@ -293,24 +334,51 @@ try {
   assert.equal(await evaluate('document.querySelector("input[name=phone]").value'), '84999991234')
 
   await evaluate('localStorage.clear()')
+  await login('/admin?admin-contact')
+  await until(`${navLabels}.includes('Equipe')`)
+  assert.deepEqual(await evaluate(navLabels), ['Agenda', 'Equipe', 'Financeiro', 'Configurações'])
+  await openSection('Equipe', 'equipe')
+  await until('document.querySelector(".admin-team-list")?.textContent.includes("Eva")')
+  assert.equal(await evaluate('testCalls.some(call => call.name === "mr_saloum_listar_catalogo_v1")'), false)
+  await evaluate('localStorage.clear()')
   await login('/admin?master')
-  await until('document.body.innerText.includes("Editar contato de barbeiro") && document.body.innerText.includes("Gerenciar barbeiros e serviços")')
-  await clickButton('Editar contato de barbeiro')
+  await until(`${navLabels}.length === 5`)
+  assert.deepEqual(await evaluate(navLabels), ['Agenda', 'Equipe', 'Serviços', 'Financeiro', 'Configurações'])
+  for (const width of [360, 390, 412]) {
+    await viewport(width, true)
+    await until(`innerWidth === ${width}`)
+    assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true, `Cinco abas em ${width}`)
+  }
+  await openSection('Serviços', 'servicos')
+  await until('document.body.innerText.includes("Corte simulado")')
+  assert.equal(await evaluate('document.body.innerText.includes("Cadastrar barbeiro")'), false)
+  await clickButton('Editar')
   await evaluate(`{
-    const field = document.querySelector('input[name=photo]').closest('section').querySelector('select')
-    field.value = '00000000-0000-4000-8000-000000000009'
-    field.dispatchEvent(new Event('change', { bubbles: true }))
+    const form = document.querySelector('input[name="price"]').form
+    form.elements.price.value = '45'
+    form.elements.slot_units.value = '2'
+    form.requestSubmit()
+  }`)
+  await until('document.body.innerText.includes("45,00") && document.body.innerText.includes("70 min")')
+  await openSection('Equipe', 'equipe')
+  await until('document.body.innerText.includes("Excluir definitivamente remove o cadastro")')
+  await evaluate(`{
+    const row = [...document.querySelectorAll('.admin-catalog-group li')].find(li => li.querySelector('strong')?.textContent === 'Eva')
+    const button = [...row.querySelectorAll('button')].find(button => button.textContent === 'Foto e contato')
+    button.click()
   }`)
   await until('document.body.innerText.includes("Contato de Eva")')
   await clickButton('Fechar edição de contato')
-  await clickButton('Gerenciar barbeiros e serviços')
   await until('document.body.innerText.includes("Excluir definitivamente remove o cadastro")')
-  await evaluate(`${select}.value = "d"; ${select}.dispatchEvent(new Event("change", { bubbles: true }))`)
   await evaluate(`[...document.querySelectorAll('.admin-catalog-group li')].find(
     row => row.querySelector('strong')?.textContent === 'Deise'
   ).querySelectorAll('button')[1].click()`)
-  await until(`!${select}.querySelector('option[value=d]') && ${select}.selectedOptions[0].text === "Aline"`)
-  const lifecycle = await evaluate('testCalls.find(call => call.name === "mr_saloum_alterar_catalogo_v1").body')
+  await until('document.body.innerText.includes("Alteração salva.")')
+  await openSection('Agenda', 'agenda')
+  await until(`!!${select} && !${select}.querySelector('option[value=d]')`)
+  await openSection('Equipe', 'equipe')
+  await until('document.body.innerText.includes("Excluir definitivamente remove o cadastro")')
+  const lifecycle = await evaluate('testCalls.find(call => call.name === "mr_saloum_alterar_catalogo_v1" && call.body.p_kind === "barber").body')
   assert.equal(lifecycle.p_expected_version, 'fixture-v1')
   assert.equal(lifecycle.p_action, 'deactivate')
 
@@ -322,7 +390,7 @@ try {
   }`)
   await evaluate('confirm = () => false')
   await brunoAction('Excluir definitivamente')
-  assert.equal(await evaluate('testCalls.filter(call => call.name === "mr_saloum_alterar_catalogo_v1").length'), 1)
+  assert.equal(await evaluate('testCalls.filter(call => call.name === "mr_saloum_alterar_catalogo_v1" && call.body.p_kind === "barber").length'), 1)
   await evaluate('window.uncertainCreate = true')
   await clickButton('Cadastrar barbeiro')
   await evaluate(`{
@@ -334,10 +402,14 @@ try {
   await until('document.body.innerText.includes("Não foi possível confirmar a operação")')
   assert.equal(await evaluate('testCalls.filter(call => call.body?.p_action === "create").length'), 1)
   await clickButton('Recarregar catálogo')
-  await until(`[...${select}.options].some(option => option.text === "Fabiana")`)
+  await until('document.body.innerText.includes("Fabiana")')
   await evaluate('confirm = () => true')
   await brunoAction('Excluir definitivamente')
-  await until(`!${select}.querySelector('option[value=b]') && [...${select}.options].some(option => option.text === "Fabiana")`)
+  await until('document.body.innerText.includes("Alteração salva.")')
+  await openSection('Agenda', 'agenda')
+  await until(`!!${select} && !${select}.querySelector('option[value=b]') && [...${select}.options].some(option => option.text === "Fabiana")`)
+  await openSection('Equipe', 'equipe')
+  await until('document.body.innerText.includes("Excluir definitivamente remove o cadastro")')
   const caioAction = (label) => evaluate(`{
     const row = [...document.querySelectorAll('.admin-catalog-group li')]
       .find(item => item.querySelector('strong')?.textContent === 'Caio')
@@ -360,7 +432,8 @@ try {
   await evaluate('window.catalogError = "42501"')
   await caioAction('Desativar')
   await until('document.body.innerText.includes("Sua conta não possui autorização")')
-  assert.equal(await evaluate('document.body.innerText.includes("Fechar gerenciamento")'), false)
+  assert.equal(await evaluate(`${navLabels}.includes('Serviços')`), false)
+  assert.equal(await evaluate('document.body.innerText.includes("Cadastrar barbeiro")'), false)
   await evaluate('localStorage.clear()')
   await cdp('Page.navigate', { url: origin + '/' })
   await until('!!document.querySelector("#customer-name")')
@@ -386,7 +459,7 @@ try {
   await evaluate('deactivatePublicBarber(); dispatchEvent(new Event("focus"))')
   await until('!document.querySelector(".barber-card.selected") && document.querySelector(".barber-card h3")?.textContent === "Bruno"')
   assert.equal(await evaluate('testCalls.some(call => call.name === "criar_agendamento")'), false)
-  console.log('Agenda em 360, 390, 412 e 1280 px, catálogo, contato e privacidade validados com dados simulados.')
+  console.log('Painel em 360, 390, 412, 768, 1280 e 1920 px, seções, agenda, financeiro, catálogo, contato e privacidade validados com dados simulados.')
 } finally {
   socket.close()
   await fetch(debuggerOrigin + '/json/close/' + page.id, { signal: AbortSignal.timeout(3000) }).catch(() => {})

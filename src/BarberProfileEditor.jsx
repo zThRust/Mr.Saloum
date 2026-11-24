@@ -11,21 +11,24 @@ async function loadProfiles(profile) {
   }
 }
 
-export default function BarberProfileEditor({ profile, onChange }) {
+export default function BarberProfileEditor({ profile, onChange, targetId, onClose }) {
   const { role, barber_id } = profile
   const [records, setRecords] = useState([])
-  const [selectedId, setSelectedId] = useState('')
   const [open, setOpen] = useState(false)
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const pending = useRef(false)
-  const record = records.find(({ id }) => id === selectedId) ?? records[0]
+  const showForm = Boolean(targetId) || open
+  const record = targetId ? records.find(({ id }) => id === targetId) : records[0]
 
   useEffect(() => {
     let current = true
     loadProfiles({ role, barber_id }).then((profiles) => {
-      if (current) setRecords(profiles)
+      if (current) {
+        setRecords(profiles)
+        setBusy(false)
+      }
     })
     return () => { current = false }
   }, [role, barber_id])
@@ -84,33 +87,19 @@ export default function BarberProfileEditor({ profile, onChange }) {
     }
   }
 
-  if (!record && !open) return null
+  if (!record && !showForm) return busy ? <p role="status">Carregando contato…</p> : <p>Edição de contato indisponível para esta conta.</p>
 
   return (
     <section className="admin-catalog">
-      <button type="button" aria-expanded={open} disabled={busy} onClick={() => setOpen(!open)}>
-        {open ? 'Fechar edição de contato' : role === 'barber' ? 'Editar meu contato' : 'Editar contato de barbeiro'}
+      <button type="button" aria-expanded={showForm} disabled={busy} onClick={targetId ? onClose : () => setOpen(!open)}>
+        {showForm ? 'Fechar edição de contato' : 'Editar meu contato'}
       </button>
-      {open && (
+      {showForm && (
         <div className="admin-catalog-group admin-catalog-content" aria-busy={busy}>
           {error && <p role="alert">{error}</p>}
           {notice && <p role="status">{notice}</p>}
           {record ? (
             <>
-              {role === 'admin' && (
-                <label>
-                  Barbeiro
-                  <select value={record.id} disabled={busy} onChange={(event) => {
-                    setSelectedId(event.target.value)
-                    setError('')
-                    setNotice('')
-                  }}>
-                    {records.map(({ id, name, active }) => (
-                      <option key={id} value={id}>{name}{active ? '' : ' (inativo)'}</option>
-                    ))}
-                  </select>
-                </label>
-              )}
               <form key={`${record.id}:${record.version}`} onSubmit={save}>
                 <fieldset disabled={busy}>
                   <legend>Contato de {record.name}</legend>

@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
+import { calcularDuracaoSlots, SERVICE_SOBRANCELHA_ID } from './bookingValues'
 
 const fields = {
   barber: [
@@ -34,35 +35,18 @@ const errorMessages = {
   '22023': 'Os dados enviados são inválidos. Revise o cadastro antes de salvar.'
 }
 
-export default function CatalogManagement({ onChange }) {
-  const [authorized, setAuthorized] = useState(false)
-  const [open, setOpen] = useState(false)
+export default function CatalogManagement({ kind, onChange, onDenied, canEditContact, onEditContact }) {
   const [catalog, setCatalog] = useState(null)
   const [editor, setEditor] = useState(null)
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
-  useEffect(() => {
-    let current = true
-    async function checkCapability() {
-      try {
-        const { data, error } = await supabase.rpc('mr_saloum_pode_gerenciar_catalogo_v1')
-        if (current) setAuthorized(!error && data === true)
-      } catch {
-        if (current) setAuthorized(false)
-      }
-    }
-    checkCapability()
-    return () => { current = false }
-  }, [])
-
-  async function loadCatalog() {
+  const loadCatalog = useCallback(async () => {
     try {
       const { data, error, status } = await supabase.rpc('mr_saloum_listar_catalogo_v1')
       if (error?.code === '42501' || status === 401 || status === 403) {
-        setAuthorized(false)
-        requireReload(errorMessages['42501'])
+        onDenied(errorMessages['42501'])
         return
       }
       if (!error && [data?.barbers, data?.services].every((records) =>
@@ -78,7 +62,11 @@ export default function CatalogManagement({ onChange }) {
     }
     setCatalog(null)
     setError('Não foi possível carregar o catálogo de gerenciamento.')
-  }
+  }, [onDenied])
+
+  useEffect(() => {
+    Promise.resolve().then(loadCatalog).finally(() => setBusy(false))
+  }, [loadCatalog])
 
   async function reloadCatalog(refreshDashboard = false) {
     setCatalog(null)
@@ -100,11 +88,6 @@ export default function CatalogManagement({ onChange }) {
     }
   }
 
-  function toggleCatalog() {
-    setOpen(!open)
-    if (!open) reloadCatalog()
-  }
-
   function requireReload(message) {
     setCatalog(null)
     setEditor(null)
@@ -112,7 +95,7 @@ export default function CatalogManagement({ onChange }) {
   }
 
   async function mutate(kind, action, record, values = null) {
-    if (busy || !authorized || !catalog) return
+    if (busy || !catalog) return
     if (action !== 'create' && (!record?.id || !record.version)) {
       requireReload(errorMessages.MS004)
       return
@@ -133,8 +116,7 @@ export default function CatalogManagement({ onChange }) {
       })
       if (error) {
         if (error.code === '42501' || status === 401 || status === 403) {
-          setAuthorized(false)
-          requireReload(errorMessages['42501'])
+          onDenied(errorMessages['42501'])
         } else if (error.code === 'MS004') requireReload(errorMessages.MS004)
         else if (errorMessages[error.code]) setError(errorMessages[error.code])
         else if (!status || status >= 500 || status === 408) requireReload(unknownOutcome)
@@ -177,14 +159,11 @@ export default function CatalogManagement({ onChange }) {
     mutate(kind, record ? 'update' : 'create', record, values)
   }
 
-  if (!authorized) return error ? <p role="alert">{error}</p> : null
+  const isBarber = kind === 'barber'
+  const records = isBarber ? catalog?.barbers : catalog?.services
 
   return (
     <section className="admin-catalog">
-      <button type="button" aria-expanded={open} disabled={busy} onClick={toggleCatalog}>
-        {open ? 'Fechar gerenciamento' : 'Gerenciar barbeiros e serviços'}
-      </button>
-      {open && (
         <div className="admin-catalog-content" aria-busy={busy}>
           {busy && <p role="status">Aguarde…</p>}
           {error && <p role="alert">{error}</p>}
@@ -195,13 +174,9 @@ export default function CatalogManagement({ onChange }) {
           {catalog && (
             <p>Desativar impede novos agendamentos e preserva o cadastro e seu histórico. Excluir definitivamente remove o cadastro quando o banco permite.</p>
           )}
-          {catalog && ['barber', 'service'].map((kind) => {
-            const isBarber = kind === 'barber'
-            const records = isBarber ? catalog.barbers : catalog.services
-            return (
+          {records && (
               <div key={kind} className="admin-catalog-group">
-                <h2>{isBarber ? 'Barbeiros' : 'Serviços'}</h2>
-                <button type="button" disabled={busy} onClick={() => startEditor(kind)}>
+                <button type="button" className="admin-primary-button" disabled={busy} onClick={() => startEditor(kind)}>
                   {isBarber ? 'Cadastrar barbeiro' : 'Cadastrar serviço'}
                 </button>
                 {editor?.kind === kind && (
@@ -225,10 +200,21 @@ export default function CatalogManagement({ onChange }) {
                   <ul>
                     {records.map((record) => (
                       <li key={record.id}>
-                        <strong>{record.name}</strong>
-                        <span>{record.active ? 'Ativo' : 'Inativo'}</span>
+                        <div className="admin-record-identity">
+                          {isBarber && (record.photo_url ? <img src={record.photo_url} alt="" /> : <span className="admin-record-avatar" aria-hidden="true">{record.name.charAt(0)}</span>)}
+                          <div>
+                            <strong>{record.name}</strong>
+                            {!isBarber && (
+                              <small>{Number(record.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} · {calcularDuracaoSlots([record]) * 35} min{record.id === SERVICE_SOBRANCELHA_ID ? ' avulsa' : ''}</small>
+                            )}
+                          </div>
+                          <span className="admin-record-status" data-active={record.active}>{record.active ? 'Ativo' : 'Inativo'}</span>
+                        </div>
                         <div className="admin-catalog-actions">
                           <button type="button" disabled={busy} onClick={() => startEditor(kind, record)}>Editar</button>
+                          {isBarber && canEditContact?.(record.id) && (
+                            <button type="button" disabled={busy} onClick={() => onEditContact(record.id)}>Foto e contato</button>
+                          )}
                           <button type="button" disabled={busy} onClick={() => mutate(kind, record.active ? 'deactivate' : 'reactivate', record)}>
                             {actionLabels[record.active ? 'deactivate' : 'reactivate']}
                           </button>
@@ -241,10 +227,8 @@ export default function CatalogManagement({ onChange }) {
                   </ul>
                 )}
               </div>
-            )
-          })}
+          )}
         </div>
-      )}
     </section>
   )
 }
