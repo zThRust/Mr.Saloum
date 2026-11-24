@@ -1,26 +1,12 @@
 
 import './App.css'
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabase'
-const SERVICE_SOBRANCELHA_ID = '534e28f8-0c11-47a1-952f-a78aa6735e27'
-
-function calcularDuracaoSlots(servicos) {
-  const servicosPrincipais = servicos.filter(
-    (servico) => servico.id !== SERVICE_SOBRANCELHA_ID
-  )
-
-  const servicosQueContam = servicosPrincipais.length > 0
-    ? servicosPrincipais
-    : servicos
-
-  return Math.max(
-    1,
-    servicosQueContam.reduce(
-      (total, servico) => total + Number(servico.slot_units || 0),
-      0
-    )
-  )
-}
+import MobileBarberCalendar from './MobileBarberCalendar'
+import { appointmentSwipeAction, historicalBarbers } from './barberCalendarNavigation'
+import { calcularDuracaoSlots, SERVICE_SOBRANCELHA_ID, totalItensRegistrados } from './bookingValues'
+const CatalogManagement = lazy(() => import('./CatalogManagement'))
+const BarberProfileEditor = lazy(() => import('./BarberProfileEditor'))
 
 // ======================================================
 // PAINEL ADMINISTRATIVO
@@ -220,11 +206,11 @@ function AdminPage() {
   }
 
   // Carregar barbeiros e serviços para o agendamento rápido
-  async function carregarDadosAgendamentoRapido() {
+  async function carregarDadosAgendamentoRapido({ atualizarFiltro = false } = {}) {
     const [barbeirosResult, servicosResult] = await Promise.all([
       supabase
         .from('barbers')
-        .select('id, name, active')
+        .select('id, name, active, photo_url')
         .eq('active', true)
         .order('name'),
 
@@ -248,9 +234,26 @@ function AdminPage() {
     }
 
     setQuickBarbers(barbeirosResult.data || [])
-    setQuickServices(servicosResult.data || [])
+    const servicosAtivos = servicosResult.data || []
+    setQuickServices(servicosAtivos)
+    setQuickServiceIds((ids) => ids.filter((id) => servicosAtivos.some((service) => service.id === id)))
+    if (atualizarFiltro) {
+      setBarbeiroVisualizado((id) =>
+        barbeirosResult.data?.some((barbeiro) => barbeiro.id === id) ||
+        appointments.some((appointment) => appointment.barber_id === id && appointment.barber_name)
+          ? id : 'all'
+      )
+    }
 
     return true
+  }
+
+  async function atualizarAposAlterarCatalogo() {
+    const [catalogoAtualizado, agendaAtualizada] = await Promise.all([
+      carregarDadosAgendamentoRapido({ atualizarFiltro: true }),
+      atualizarAgenda()
+    ])
+    return catalogoAtualizado && agendaAtualizada
   }
 
   async function carregarPainel(usuario) {
@@ -300,7 +303,7 @@ function AdminPage() {
       completed_by: mapaAtendimentos.get(appointment.id)?.completed_by || null
     }))
 
-    setProfile(perfil)
+    setProfile({ ...perfil, userId: usuario.id })
     setAppointments(agendaComAtendimentos)
     setHoraAtual(new Date())
 
@@ -374,6 +377,10 @@ function AdminPage() {
 
   // Abre o cadastro manual já vinculado ao horário encerrado selecionado.
   function abrirAgendamentoNoHorario(barberId, date, time) {
+    if (!quickBarbers.some(({ id }) => id === barberId)) {
+      setError('Este barbeiro está indisponível para novos agendamentos.')
+      return
+    }
     setQuickError('')
     setQuickName('')
     setQuickPhone('')
@@ -413,6 +420,8 @@ function AdminPage() {
   ? calcularDuracaoSlots(quickSelectedServices)
   : 0
 
+  const quickBarberActive = quickBarbers.some(({ id }) => id === quickBarberId)
+
   // Consultar horários disponíveis usando a mesma função do site público
   useEffect(() => {
     let ativo = true
@@ -420,12 +429,12 @@ function AdminPage() {
     async function consultarHorarios() {
       if (
         !quickBookingOpen ||
-        !quickBarberId ||
+        !quickBarberActive ||
         !quickDate ||
         quickServiceIds.length === 0 ||
         quickDuration < 1
       ) {
-        setQuickTimes(quickPinnedSlot && quickPinnedSlot.barberId === quickBarberId && quickPinnedSlot.date === quickDate
+        setQuickTimes(quickBarberActive && quickPinnedSlot && quickPinnedSlot.barberId === quickBarberId && quickPinnedSlot.date === quickDate
           ? [quickPinnedSlot.time]
           : [])
         setQuickTime('')
@@ -485,6 +494,7 @@ function AdminPage() {
   }, [
     quickBookingOpen,
     quickBarberId,
+    quickBarberActive,
     quickDate,
     quickServiceIds,
     quickDuration,
@@ -514,6 +524,10 @@ function AdminPage() {
 
     if (!quickBarberId) {
       setQuickError('Selecione um barbeiro.')
+      return
+    }
+    if (!quickBarberActive) {
+      setQuickError('Este barbeiro está indisponível para novos agendamentos.')
       return
     }
 
@@ -671,19 +685,12 @@ function AdminPage() {
       return
     }
 
-    const deslocamentoX = event.clientX - inicio.x
-    const deslocamentoY = event.clientY - inicio.y
-
-    if (Math.abs(deslocamentoX) < 65 || Math.abs(deslocamentoX) < Math.abs(deslocamentoY) * 1.25) {
-      setSwipeVisual(null)
-      return
-    }
-    if (attendanceLoading || cancelLoading) {
+    const direction = appointmentSwipeAction(inicio, event)
+    if (!direction || attendanceLoading || cancelLoading) {
       setSwipeVisual(null)
       return
     }
 
-    const direction = deslocamentoX > 0 ? 'complete' : 'cancel'
     setSwipeVisual({
       appointmentId: appointment.id,
       delta: direction === 'complete' ? 125 : -125,
@@ -812,11 +819,16 @@ function AdminPage() {
     })
   }
 
+  const barbeirosHistoricos = profile?.role === 'admin'
+    ? historicalBarbers(quickBarbers, appointments)
+    : []
+  const opcoesBarbeirosAgenda = [...quickBarbers, ...barbeirosHistoricos]
+
   function pertenceAoBarbeiro(appointment, barberId) {
     if (barberId === 'all') return true
     if (!barberId) return false
 
-    const barber = quickBarbers.find((item) => item.id === barberId)
+    const barber = opcoesBarbeirosAgenda.find((item) => item.id === barberId)
     const nomeBarbeiro = barber?.name ||
       (profile?.barber_id === barberId ? profile.name : '')
 
@@ -938,6 +950,10 @@ function AdminPage() {
   return Math.max(1, slots) * 35
 }
 
+  const agendamentosDoDia = agendamentosConfirmados.filter(
+    (appointment) => chaveData(appointment.starts_at) === dataCalendario
+  )
+
   const barbeirosAgenda = (() => {
     if (profile?.role === 'barber') {
       const proprio = quickBarbers.find(
@@ -951,26 +967,27 @@ function AdminPage() {
           }]
     }
 
-    if (barbeiroVisualizado === 'all') return quickBarbers
+    if (barbeiroVisualizado === 'all') {
+      const idsDoDia = new Set(agendamentosDoDia.map((appointment) => appointment.barber_id))
+      return [...quickBarbers, ...barbeirosHistoricos.filter(({ id }) => idsDoDia.has(id))]
+    }
 
-    return quickBarbers.filter(
+    return opcoesBarbeirosAgenda.filter(
       (barber) => barber.id === barbeiroVisualizado
     )
   })()
 
-  const agendamentosDoDia = agendamentosConfirmados.filter(
-    (appointment) => chaveData(appointment.starts_at) === dataCalendario
-  )
-
   // Consulta horários livres de 35 minutos para mostrar os espaços disponíveis
   // sem inventar horários com base apenas nos intervalos entre agendamentos.
-  const idsBarbeirosCalendario = barbeirosAgenda.map((barber) => barber.id).join(',')
+  const idsBarbeirosCalendario = barbeirosAgenda
+    .filter((barber) => barber.active !== false)
+    .map((barber) => barber.id).join(',')
 
   useEffect(() => {
     let ativo = true
 
     async function consultarDisponibilidadeCalendario() {
-      if (!dataCalendario || barbeirosAgenda.length === 0) {
+      if (!dataCalendario || !idsBarbeirosCalendario) {
         setDisponibilidadeCalendario({})
         setCarregandoDisponibilidade(false)
         return
@@ -978,11 +995,11 @@ function AdminPage() {
 
       setCarregandoDisponibilidade(true)
       const resultados = await Promise.all(
-        barbeirosAgenda.map(async (barber) => {
+        idsBarbeirosCalendario.split(',').map(async (barberId) => {
           const { data, error: disponibilidadeError } = await supabase.rpc(
             'consultar_disponibilidade',
             {
-              p_barber_id: barber.id,
+              p_barber_id: barberId,
               p_data: dataCalendario,
               p_duracao_slots: 1
             }
@@ -990,7 +1007,7 @@ function AdminPage() {
 
           if (disponibilidadeError) {
             console.error('Erro ao consultar disponibilidade do calendário:', disponibilidadeError)
-            return [barber.id, { error: true, horarios: [] }]
+            return [barberId, { error: true, horarios: [] }]
           }
 
           const todosHorarios = (data || []).map((item) => ({
@@ -1002,7 +1019,7 @@ function AdminPage() {
             .filter((item) => item.disponivel)
             .map((item) => item.horario)
 
-          return [barber.id, { error: false, horarios, todosHorarios }]
+          return [barberId, { error: false, horarios, todosHorarios }]
         })
       )
 
@@ -1022,7 +1039,7 @@ function AdminPage() {
   useEffect(() => {
     let ativo = true
     async function consultarBloqueios() {
-      if (!profile || !dataCalendario || barbeirosAgenda.length === 0) {
+      if (!profile || !dataCalendario || !idsBarbeirosCalendario) {
         if (ativo) setBloqueiosCalendario({})
         return
       }
@@ -1631,7 +1648,7 @@ function AdminPage() {
               )}
 
               {!quickTimesLoading &&
-                quickBarberId &&
+                quickBarberActive &&
                 quickDate &&
                 quickServiceIds.length > 0 &&
                 quickTimes.length === 0 &&
@@ -1665,7 +1682,7 @@ function AdminPage() {
                   quickTimesLoading ||
                   !quickName.trim() ||
                   !quickPhone.trim() ||
-                  !quickBarberId ||
+                  !quickBarberActive ||
                   quickServiceIds.length === 0 ||
                   !quickDate ||
                   !quickTime
@@ -1686,7 +1703,7 @@ function AdminPage() {
                     quickTimesLoading ||
                     !quickName.trim() ||
                     !quickPhone.trim() ||
-                    !quickBarberId ||
+                    !quickBarberActive ||
                     quickServiceIds.length === 0 ||
                     !quickDate ||
                     !quickTime
@@ -1747,10 +1764,27 @@ function AdminPage() {
 
         <p style={{ color: '#aaa', margin: 0 }}>
           {profile.role === 'admin'
-            ? 'Administrador mestre — acesso a todas as agendas'
+            ? 'Administrador — acesso a todas as agendas'
             : 'Barbeiro — acesso restrito à própria agenda'}
         </p>
       </section>
+
+      <Suspense fallback={null}>
+        <BarberProfileEditor
+          key={profile.userId}
+          profile={profile}
+          onChange={carregarDadosAgendamentoRapido}
+        />
+      </Suspense>
+
+      {profile.role === 'admin' && (
+        <Suspense fallback={null}>
+          <CatalogManagement
+            key={profile.userId}
+            onChange={atualizarAposAlterarCatalogo}
+          />
+        </Suspense>
+      )}
 
       {error && (
         <div
@@ -1814,6 +1848,7 @@ function AdminPage() {
           <div className="admin-agenda-view-controls">
             {profile.role === 'admin' && (
               <select
+                className={modoAgenda === 'calendario' && barbeiroVisualizado === 'all' && barbeirosAgenda.length ? 'admin-calendar-desktop-select' : undefined}
                 aria-label="Selecionar agenda do barbeiro"
                 value={barbeiroVisualizado}
                 onChange={(event) => setBarbeiroVisualizado(event.target.value)}
@@ -1824,9 +1859,9 @@ function AdminPage() {
                 }}
               >
                 <option value="all">Todas as agendas</option>
-                {quickBarbers.map((barber) => (
+                {opcoesBarbeirosAgenda.map((barber) => (
                   <option key={barber.id} value={barber.id}>
-                    {barber.name}
+                    {barber.name}{barber.active === false ? ' (histórico)' : ''}
                   </option>
                 ))}
               </select>
@@ -1935,17 +1970,19 @@ function AdminPage() {
 
             {barbeirosAgenda.length === 0 ? (
               <p style={{ color: '#999', padding: 15 }}>
-                Não foi possível identificar os barbeiros ativos para montar o calendário.
+                Nenhum barbeiro disponível para exibir neste calendário.
               </p>
             ) : (
-              <div className="admin-calendar-columns">
-                {barbeirosAgenda.map((barber) => {
+              <MobileBarberCalendar
+                enabled={profile.role === 'admin' && barbeiroVisualizado === 'all'}
+                barbers={barbeirosAgenda}
+                renderBarber={(barber) => {
                   const agendamentosBarbeiro = agendamentosDoDia
                     .filter((appointment) => pertenceAoBarbeiro(appointment, barber.id) ||
                       (!appointment.barber_id && appointment.barber_name === barber.name))
                     .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())
 
-                  const disponibilidade = disponibilidadeCalendario[barber.id]
+                  const disponibilidade = barber.active === false ? null : disponibilidadeCalendario[barber.id]
                   const todosHorarios = disponibilidade?.todosHorarios || []
                   const bloqueiosBarbeiro = bloqueiosCalendario[barber.id] || []
                   const eventos = [
@@ -1981,10 +2018,10 @@ function AdminPage() {
                   ].sort((a, b) => a.ordem - b.ordem || (a.tipo === 'ocupado' ? -1 : 1))
 
                   return (
-                    <section className="admin-calendar-barber" key={barber.id}>
+                    <>
                       <header className="admin-calendar-barber-heading">
                         <strong>{barber.name}</strong>
-                        <span>{agendamentosBarbeiro.length} {agendamentosBarbeiro.length === 1 ? 'marcado' : 'marcados'}</span>
+                        <span>{barber.active === false ? 'Histórico · ' : ''}{agendamentosBarbeiro.length} {agendamentosBarbeiro.length === 1 ? 'marcado' : 'marcados'}</span>
                       </header>
 
                       {carregandoDisponibilidade && eventos.length === 0 ? (
@@ -2114,10 +2151,10 @@ function AdminPage() {
                       {disponibilidade?.error && (
                         <p className="admin-calendar-warning">Não foi possível carregar os horários livres. Os agendamentos confirmados continuam visíveis.</p>
                       )}
-                    </section>
+                    </>
                   )
-                })}
-              </div>
+                }}
+              />
             )}
 
           </>
@@ -2335,8 +2372,12 @@ const quickInputStyle = {
 function ClienteApp() {
   const [barbers, setBarbers] = useState([])
   const [services, setServices] = useState([])
-  const [selectedServices, setSelectedServices] = useState([])
-  const [selectedBarber, setSelectedBarber] = useState(null)
+  const [selectedServiceIds, setSelectedServiceIds] = useState([])
+  const [selectedBarberId, setSelectedBarberId] = useState('')
+  const selectedBarber = barbers.find(({ id }) => id === selectedBarberId) ?? null
+  const activeBarberId = selectedBarber?.id
+  const selectedServices = selectedServiceIds.map((id) => services.find((service) => service.id === id)).filter(Boolean)
+  const selectedServiceCount = selectedServices.length
   const [bookingDetails, setBookingDetails] = useState(null)
   const [horaAtual, setHoraAtual] = useState(new Date())
 
@@ -2769,19 +2810,9 @@ function ClienteApp() {
     if (!selectedBarber) return
     limparMensagensAgendamento()
 
-    setSelectedServices((servicosAtuais) => {
-      const jaSelecionado = servicosAtuais.some(
-        (item) => item.id === service.id
-      )
-
-      if (jaSelecionado) {
-        return servicosAtuais.filter(
-          (item) => item.id !== service.id
-        )
-      }
-
-      return [...servicosAtuais, service]
-    })
+    setSelectedServiceIds((ids) =>
+      ids.includes(service.id) ? ids.filter((id) => id !== service.id) : [...ids, service.id]
+    )
 
     setSelectedTime('')
     setSelectedDate('')
@@ -2844,44 +2875,45 @@ function ClienteApp() {
   ]
 
   useEffect(() => {
-    async function buscarBarbeiros() {
-      const { data, error } = await supabase
-        .from('barbers')
-        .select('*')
-        .eq('active', true)
+    let requisicaoAtual = 0
+    async function atualizarCatalogoPublico() {
+      const requisicao = ++requisicaoAtual
+      const [barbeiros, servicos] = await Promise.all([
+        supabase.from('barbers').select('id, name, photo_url').eq('active', true),
+        supabase.from('services').select('id, name, price, slot_units, icon, description').eq('active', true)
+      ])
+      if (requisicao !== requisicaoAtual) return
 
-      if (error) {
-        console.error('Erro ao buscar barbeiros:', error.message)
+      if (barbeiros.error) {
+        console.error('Erro ao buscar barbeiros:', barbeiros.error.message)
       } else {
-        setBarbers(data)
+        const ativos = barbeiros.data || []
+        setBarbers(ativos)
+        setSelectedBarberId((id) => ativos.some((barbeiro) => barbeiro.id === id) ? id : '')
+      }
+
+      if (servicos.error) {
+        console.error('Erro ao buscar serviços:', servicos.error.message)
+      } else {
+        const ativos = servicos.data || []
+        setServices(ativos)
+        setSelectedServiceIds((ids) => ids.filter((id) => ativos.some((service) => service.id === id)))
       }
     }
 
-    buscarBarbeiros()
-  }, [])
-
-  useEffect(() => {
-    async function buscarServicos() {
-      const { data, error } = await supabase
-        .from('services')
-        .select('*')
-        .eq('active', true)
-
-      if (error) {
-        console.error('Erro ao buscar serviços:', error.message)
-      } else {
-        setServices(data)
-      }
+    atualizarCatalogoPublico()
+    window.addEventListener('focus', atualizarCatalogoPublico)
+    return () => {
+      requisicaoAtual++
+      window.removeEventListener('focus', atualizarCatalogoPublico)
     }
-
-    buscarServicos()
   }, [])
 
   useEffect(() => {
     let ativo = true
 
     async function buscarHorariosDisponiveis() {
-      if (!selectedDate || !selectedBarber || selectedServices.length === 0) {
+      if (!selectedDate || !activeBarberId || selectedServiceCount === 0) {
         setAvailableTimes([])
         setLoadingTimes(false)
         return
@@ -2893,7 +2925,7 @@ function ClienteApp() {
       const { data, error } = await supabase.rpc(
         'consultar_disponibilidade',
         {
-          p_barber_id: selectedBarber.id,
+          p_barber_id: activeBarberId,
           p_data: selectedDate,
           p_duracao_slots: duracaoSlots
         }
@@ -2922,7 +2954,8 @@ function ClienteApp() {
     }
   }, [
     selectedDate,
-    selectedBarber,
+    activeBarberId,
+    selectedServiceCount,
     duracaoSlots,
     availabilityRefresh
   ])
@@ -3402,12 +3435,7 @@ function ClienteApp() {
                         </span>
 
                         <strong>
-                          R$ {formatarValor(
-                            ativos.reduce(
-                              (total, item) => total + Number(item.price),
-                              0
-                            )
-                          )}
+                          R$ {formatarValor(totalItensRegistrados(ativos))}
                         </strong>
                       </div>
 
@@ -3503,11 +3531,11 @@ function ClienteApp() {
               onClick={() => {
                 limparMensagensAgendamento()
                 if (selectedBarber?.id !== barber.id) {
-                  setSelectedServices([])
+                  setSelectedServiceIds([])
                   setSelectedDate('')
                   setWeekOffset(0)
                 }
-                setSelectedBarber(barber)
+                setSelectedBarberId(barber.id)
                 setSelectedTime('')
 
                 document.getElementById('servicos')?.scrollIntoView({

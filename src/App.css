@@ -5977,3 +5977,135 @@ main.public-site .navbar-actions .nav-button {
     min-width: 112px;
   }
 }
+.admin-calendar-mobile-nav {
+  display: none;
+}
+
+.admin-catalog {
+  margin-bottom: 25px;
+}
+
+.admin-catalog-content {
+  display: grid;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.admin-catalog-group {
+  padding: 16px;
+  border: 1px solid #333;
+  border-radius: 12px;
+  background: #1d1d1d;
+  overflow-wrap: anywhere;
+}
+
+.admin-catalog-group h2 {
+  margin: 0 0 12px;
+}
+
+.admin-catalog-group fieldset {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 12px 0;
+  border: 1px solid #555;
+}
+
+.admin-catalog-group input,
+.admin-catalog-group select,
+.admin-calendar-mobile-nav select {
+  width: 100%;
+  padding: 8px;
+  color: #eee;
+  background: #151515;
+  border: 1px solid #666;
+  border-radius: 8px;
+  font: inherit;
+  min-width: 0;
+}
+
+.admin-catalog-group ul {
+  padding: 0;
+  list-style: none;
+}
+
+.admin-catalog-group li {
+  display: grid;
+  gap: 6px;
+  padding: 12px 0;
+  border-bottom: 1px solid #444;
+}
+
+.admin-catalog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 680px) {
+  .admin-agenda-view-controls .admin-calendar-desktop-select,
+  .admin-calendar-overview .admin-calendar-barber[data-mobile-selected="false"],
+  .admin-calendar-overview .admin-calendar-barber-heading strong {
+    display: none;
+  }
+
+  .admin-calendar-overview {
+    min-width: 0;
+    overflow: clip;
+    touch-action: pan-y pinch-zoom;
+  }
+
+  .admin-calendar-mobile-nav {
+    display: grid;
+    gap: 8px;
+    padding: 8px 2px;
+  }
+
+  .admin-calendar-mobile-identity {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    overflow-wrap: anywhere;
+  }
+
+  .admin-calendar-mobile-identity img,
+  .admin-calendar-mobile-identity span {
+    display: grid;
+    place-items: center;
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    object-fit: cover;
+    border-radius: 50%;
+    color: #e5b878;
+    background: #252525;
+  }
+
+  .admin-calendar-mobile-dots {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .admin-calendar-mobile-dots button {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  .admin-calendar-mobile-dots button::after {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #888;
+  }
+
+  .admin-calendar-mobile-dots button[aria-pressed="true"]::after {
+    background: #e5b878;
+  }
+}
