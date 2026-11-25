@@ -1,3 +1,5 @@
+import BrandLogo from './BrandLogo'
+
 const icons = {
   agenda: 'M3 6h18v15H3z M7 3v6m10-6v6M3 11h18',
   equipe: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2m20 0v-2a4 4 0 0 0-3-4m-6-6a4 4 0 1 1-8 0 4 4 0 0 1 8 0m4-4a4 4 0 0 1 0 8',
@@ -10,7 +12,7 @@ export default function AdminNavigation({ name, role, sections, active, onSelect
   return (
     <header className="admin-shell-header">
       <div className="admin-shell-top">
-        <strong className="admin-shell-brand">MR.SAL<span>OUM</span></strong>
+        <BrandLogo className="admin-shell-brand" />
         <div className="admin-shell-account"><strong>{name}</strong><span>{role}</span></div>
         <button type="button" onClick={onLogout} aria-label="Sair da conta">Sair</button>
       </div>

@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabase'
 import MobileBarberCalendar from './MobileBarberCalendar'
 import AdminNavigation from './AdminNavigation'
+import BrandLogo from './BrandLogo'
 import { adminSections } from './adminSections'
 import { editableBarberProfiles } from './barberProfile'
 import { appointmentSwipeAction, historicalBarbers } from './barberCalendarNavigation'
@@ -1215,9 +1216,7 @@ export default function AdminPage() {
     return (
       <main className="auth-page">
         <div className="auth-card">
-          <div className="auth-brand">
-            MR.SAL<span>OUM</span>
-          </div>
+          <BrandLogo className="auth-brand" />
 
           <p>Verificando acesso administrativo...</p>
         </div>
@@ -1230,9 +1229,7 @@ export default function AdminPage() {
     return (
       <main className="auth-page">
         <div className="auth-card">
-          <div className="auth-brand">
-            MR.SAL<span>OUM</span>
-          </div>
+          <BrandLogo className="auth-brand" />
 
           <p className="auth-eyebrow">ÁREA RESTRITA</p>
 

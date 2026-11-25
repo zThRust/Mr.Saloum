@@ -1217,23 +1217,11 @@ input {
 
 
 .auth-brand {
-
-  font-size: 25px;
-
-  font-weight: 800;
-
-  margin-bottom: 35px;
-
-  letter-spacing: 1px;
-
-}
-
-
-
-.auth-brand span {
-
-  color: #c49a52;
-
+  display: block;
+  width: auto;
+  height: 86px;
+  margin-bottom: 20px;
+  object-fit: contain;
 }
 
 
@@ -4434,6 +4422,19 @@ main.public-site .brand-logo {
   object-fit: contain;
 }
 
+main.public-site .footer-brand-logo,
+main.public-site .install-brand-logo {
+  display: block;
+  width: auto;
+  height: 56px;
+  object-fit: contain;
+}
+
+main.public-site .install-brand-logo {
+  height: 78px;
+  margin-bottom: 12px;
+}
+
 html:has(main.public-site > .navbar) {
   scroll-padding-top: 90px;
 }
@@ -4536,13 +4537,9 @@ main.public-site .hero-side-note strong {
 }
 
 main.public-site .hero-side-mark {
-  display: grid;
-  place-items: center;
-  width: 35px;
-  height: 35px;
-  border: 1px solid var(--ms-accent);
-  color: var(--ms-accent);
-  font: 25px Georgia, serif;
+  width: auto;
+  height: 38px;
+  object-fit: contain;
 }
 
 main.public-site .booking-workspace {
@@ -6093,8 +6090,7 @@ main.public-site .navbar-actions .nav-button {
   padding-block: 12px;
 }
 
-.admin-shell-brand { font-size: 1.18rem; letter-spacing: .08em; }
-.admin-shell-brand span { color: #c5a46d; }
+.admin-shell-brand { display: block; width: auto; height: 48px; object-fit: contain; }
 .admin-shell-account { display: grid; justify-items: end; min-width: 0; }
 .admin-shell-account strong { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .admin-shell-account span { color: #c0b8a8; font-size: .73rem; }
@@ -6177,7 +6173,7 @@ main.public-site .navbar-actions .nav-button {
 @media (max-width: 680px) {
   .admin-shell-top, .admin-shell-nav, .admin-shell-content { width: calc(100% - 20px); }
   .admin-shell-top { gap: 9px; padding-block: 8px; }
-  .admin-shell-brand { font-size: .95rem; }
+  .admin-shell-brand { height: 42px; }
   .admin-shell-account { font-size: .85rem; }
   .admin-shell-nav { gap: 2px; }
   .admin-shell-nav button { flex: 1; flex-direction: column; gap: 3px; font-size: .72rem; padding-inline: 1px; }

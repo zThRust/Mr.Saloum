@@ -10,7 +10,10 @@ if (builds.length !== 3) throw new Error('Uso: node tests/browser/pwa.mjs <dist-
 const debug = 'http://127.0.0.1:9436'
 const origin = 'http://127.0.0.1:5182'
 let published = 0
-const mime = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html', '.webmanifest': 'application/manifest+json' }
+const mime = {
+  '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html',
+  '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp'
+}
 const http = createServer(async (request, response) => {
   const url = new URL(request.url, origin)
   const root = builds[published]
@@ -85,7 +88,7 @@ function mocks() {
     .map((value) => btoa(JSON.stringify(value)).replace(/=/g, '')).join('.') + '.c2ln'
   const request = window.fetch.bind(window)
   window.fetch = async (input, options) => {
-    const url = new URL(typeof input === 'string' ? input : input.url ?? input)
+    const url = new URL(typeof input === 'string' ? input : input.url ?? input, location.origin)
     if (url.origin === location.origin) return request(input, options)
     if (url.origin !== 'http://127.0.0.1:59887') throw new Error('Origem fora do mock')
     const name = url.pathname.split('/').at(-1)
@@ -128,6 +131,8 @@ try {
   await page.evaluate('navigator.serviceWorker.getRegistration().then(r => r.update())')
   await page.until('navigator.serviceWorker.getRegistration().then(r => !!r.waiting)')
   await page.close()
+  // Give Chromium time to release the closed client before opening a new one under the same scope.
+  await delay(750)
   page = await tab()
   const directEntry = await fetch(origin + '/admin/index.html')
   assert.equal(directEntry.status, 200)
@@ -153,6 +158,35 @@ try {
   assert.equal(await page.evaluate('sessionStorage.getItem("pwa-volume")'), 'continuar')
   assert.equal(await page.evaluate('caches.has("cache-alheio")'), true)
   assert.equal(await page.evaluate('!!document.querySelector(".pwa-update-banner")'), false)
+  await page.until('document.querySelector(".admin-shell-brand")?.naturalWidth === 400')
+  assert.equal(await page.evaluate('caches.match("/mr-saloum-logo-header.webp").then(Boolean)'), true)
+  const manifest = await (await fetch(origin + '/manifest.webmanifest')).json()
+  assert.equal(manifest.start_url, '/')
+  assert.equal(manifest.scope, '/')
+  assert.deepEqual(manifest.icons.map(({ sizes, purpose }) => [sizes, purpose]), [
+    ['192x192', 'any'], ['512x512', 'any'], ['192x192', 'maskable'], ['512x512', 'maskable']
+  ])
+  const metadata = await page.evaluate(`(async () => {
+    const manifest = await fetch('/manifest.webmanifest').then(response => response.json())
+    const home = new DOMParser().parseFromString(await fetch('/').then(response => response.text()), 'text/html')
+    const faviconLinks = [...home.querySelectorAll('link[rel="icon"], link[rel="apple-touch-icon"]')]
+    const shareLinks = [...home.querySelectorAll('meta[property="og:image"], meta[name="twitter:image"]')]
+    const urls = [
+      ...manifest.icons.map(icon => icon.src),
+      ...faviconLinks.map(link => link.getAttribute('href')),
+      ...shareLinks.map(meta => new URL(meta.content).pathname + new URL(meta.content).search)
+    ]
+    return Promise.all(urls.map(async (url) => {
+      const image = new Image()
+      image.src = url
+      await image.decode()
+      return [new URL(url, location.origin).search, image.naturalWidth, image.naturalHeight]
+    }))
+  })()`)
+  assert.deepEqual(metadata, [
+    [192, 192], [512, 512], [192, 192], [512, 512],
+    [16, 16], [32, 32], [48, 48], [180, 180], [1200, 630], [1200, 630]
+  ].map(([width, height]) => ['?v=11', width, height]))
   console.log('PWA: legado → B → C, espera, operação, sessão, cache alheio e recarga única aprovados.')
 } finally {
   await page?.close()

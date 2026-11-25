@@ -23,7 +23,7 @@ test('HTML inicial público tem canonical, imagem social e JSON-LD; painel tem n
   const index = read('index.html')
   const admin = read('admin/index.html')
   assert.ok(index.includes(`href="${DEFAULT_SITE_ORIGIN}/"`))
-  assert.ok(index.includes(`content="${DEFAULT_SITE_ORIGIN}/mr-saloum-share.jpg"`))
+  assert.ok(index.includes(`content="${DEFAULT_SITE_ORIGIN}/mr-saloum-share.jpg?v=11"`))
   assert.match(index, /"@type": "HairSalon"/)
   assert.match(index, /"addressLocality": "Parnamirim"/)
   assert.doesNotMatch(index, /telephone|geoCoordinates|aggregateRating/)

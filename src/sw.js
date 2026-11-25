@@ -55,7 +55,12 @@ async function asset(request) {
 self.addEventListener('fetch', (event) => {
   const { request } = event
   const url = new URL(request.url)
-  if (request.method !== 'GET' || url.origin !== origin || url.search || request.headers.has('authorization')) return
+  if (request.method !== 'GET' || url.origin !== origin || request.headers.has('authorization')) return
+  if (assets.includes(url.href)) {
+    event.respondWith(asset(request))
+    return
+  }
+  if (url.search) return
   if (request.mode === 'navigate' && ['/', '/admin', '/admin/', '/admin/index.html'].includes(url.pathname)) {
     event.respondWith(navigation(request, url))
   } else if (url.pathname.startsWith('/assets/')) {

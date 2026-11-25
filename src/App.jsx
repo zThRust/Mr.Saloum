@@ -1,4 +1,5 @@
 import './App.css'
+import BrandLogo from './BrandLogo'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { calcularDuracaoSlots, totalItensRegistrados } from './bookingValues'
@@ -651,9 +652,7 @@ function ClienteApp() {
     return (
       <main className="auth-page">
         <div className="auth-card">
-          <div className="auth-brand">
-            MR.SAL<span>OUM</span>
-          </div>
+          <BrandLogo className="auth-brand" />
 
           <p>Carregando sua área...</p>
         </div>
@@ -665,9 +664,7 @@ function ClienteApp() {
     return (
       <main className="auth-page">
         <div className="auth-card">
-          <div className="auth-brand">
-            MR.SAL<span>OUM</span>
-          </div>
+          <BrandLogo className="auth-brand" />
 
           <p className="auth-eyebrow">SEJA BEM-VINDO</p>
 
@@ -731,13 +728,7 @@ function ClienteApp() {
     <main className="public-site">
       <header className="navbar">
         <a className="brand" href="#inicio">
-          <img
-            className="brand-logo"
-            src="/mr-saloum-logo-header.webp"
-            alt="Mr.Saloum Barbearia"
-            width="400"
-            height="460"
-          />
+          <BrandLogo className="brand-logo" />
         </a>
 
         <nav>
@@ -791,7 +782,7 @@ function ClienteApp() {
         <div role="presentation" onClick={() => setInstallOpen(false)} style={{position:'fixed',inset:0,zIndex:20000,background:'rgba(0,0,0,.78)',display:'flex',alignItems:'center',justifyContent:'center',padding:18}}>
           <section role="dialog" aria-modal="true" aria-labelledby="pwa-title" onClick={(e) => e.stopPropagation()} style={{position:'relative',width:'100%',maxWidth:410,background:'#191817',border:'1px solid #6b5638',borderRadius:18,padding:26,color:'#f5f1e9',boxShadow:'0 20px 80px #000a'}}>
             <button type="button" aria-label="Fechar convite" onClick={() => setInstallOpen(false)} style={{position:'absolute',right:14,top:12,background:'transparent',border:0,color:'#eee',fontSize:27,cursor:'pointer'}}>×</button>
-            <img src="/pwa-192.png" alt="Mr.Saloum" width="78" height="78" style={{borderRadius:18,objectFit:'cover',marginBottom:12}} />
+            <BrandLogo className="install-brand-logo" decorative />
             <h2 id="pwa-title" style={{margin:'0 0 10px',fontSize:23}}>Mr.Saloum no seu celular</h2>
             <p style={{lineHeight:1.6,color:'#d5d0c8'}}>Instale gratuitamente para agendar seu próximo corte com apenas um toque. Você também pode continuar usando o site normalmente.</p>
             {installPrompt ? (
@@ -1142,7 +1133,7 @@ function ClienteApp() {
           <p>Escolha seu profissional, selecione os serviços e reserve seu horário.</p>
         </div>
         <div className="hero-side-note">
-          <span className="hero-side-mark">M</span>
+          <BrandLogo className="hero-side-mark" decorative />
           <span>AGENDE ONLINE<br /><strong>SEM COMPLICAÇÃO</strong></span>
         </div>
       </section>
@@ -1416,8 +1407,7 @@ function ClienteApp() {
       {/* RODAPÉ */}
       <footer>
         <a className="brand" href="#inicio">
-          <span className="brand-mark">M</span>
-          <span>MR.SAL<span className="gold">OUM</span></span>
+          <BrandLogo className="footer-brand-logo" />
         </a>
 
         <p>
@@ -1436,7 +1426,7 @@ function App() {
   const caminho = window.location.pathname
 
   if (caminho.startsWith('/admin')) {
-    return <Suspense fallback={<p role="status">Carregando painel?</p>}><AdminPage /></Suspense>
+    return <Suspense fallback={<div role="status"><BrandLogo className="auth-brand" />Carregando painel?</div>}><AdminPage /></Suspense>
   }
 
   return <ClienteApp />

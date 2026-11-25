@@ -20,10 +20,7 @@ export default defineConfig(({ mode }) => ({
       filename: 'sw.js',
       injectRegister: false,
 
-      includeAssets: [
-        'pwa-192.png',
-        'pwa-512.png',
-      ],
+      includeAssets: ['mr-saloum-logo-header.webp'],
 
       manifest: {
         name: 'Mr.Saloum Barbearia',
@@ -41,16 +38,28 @@ export default defineConfig(({ mode }) => ({
 
         icons: [
           {
-            src: '/pwa-192.png',
+            src: '/pwa-192.png?v=11',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any',
           },
           {
-            src: '/pwa-512.png',
+            src: '/pwa-512.png?v=11',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any maskable',
+            purpose: 'any',
+          },
+          {
+            src: '/pwa-maskable-192.png?v=11',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+          {
+            src: '/pwa-maskable-512.png?v=11',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
           },
         ],
       },
